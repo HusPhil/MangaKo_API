@@ -1,9 +1,5 @@
-from pydantic import BaseModel
-from typing import List
-
-
-from pydantic import BaseModel
-
+from pydantic import BaseModel, RootModel
+from typing import List, Optional, Dict
 
 class Manga(BaseModel):
     mangaId: str
@@ -44,7 +40,17 @@ class MangaChapterPage(BaseModel):
     pageWidth: int
     pageHeight: int
 
+class ChapterNavigation(BaseModel):
+    prev: Optional[MangaChapter]
+    next: Optional[MangaChapter]
+
+class ChaptersNavigationMap(RootModel[Dict[str, ChapterNavigation]]):
+    pass
+
 class MangaInfoResponse(BaseModel):
     mangaChapters: list[MangaChapter]
     mangaDetails: MangaDetails
+    chaptersNavigationMap: ChaptersNavigationMap
+
+
 

@@ -2,12 +2,19 @@ from fastapi import FastAPI
 from app.api.v1.router import router as api_router
 from fastapi.middleware.cors import CORSMiddleware
 
+from dotenv import load_dotenv
+
+
+load_dotenv()
+
 app = FastAPI(title="MangaKo API")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:8081",  # ✅ Allow local frontend during development
+        "http://REDACTED:8081",  # ✅ Allow local frontend during development
+        "http://REDACTED:8081",  # ✅ Allow local frontend during development
         "http://REDACTED:8081",  # ✅ Allow local frontend during development
         "http://REDACTED:5173",  # ✅ Allow local frontend during development
         "http://REDACTED:5173",  # ✅ Allow local frontend during development

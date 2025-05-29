@@ -15,7 +15,9 @@ from app.schemas.manga_schema import (
     LatestMangaListResponse,
     PopularMangaListResponse,
     MangaChapterPage,
-    MangaSearchResponse
+    MangaSearchResponse,
+    ChaptersNavigationMap,
+    ChapterNavigation
 )
 
 IMAGE_PROXY_WORKER_URL = "https://mangako-page-image-proxy.REDACTED/"
@@ -207,10 +209,13 @@ class MangakakalotScraper(BaseScraper):
                     chapterUrl=chapter_url,
                     chapterTimeUploaded=chapter_time
                 ))
+        
+        chapters_navigation_map = self._build_chapters_navigation_map(chapters)
 
         return MangaInfoResponse(
             mangaDetails=details,
-            mangaChapters=chapters
+            mangaChapters=chapters,
+            chaptersNavigationMap=chapters_navigation_map
         )
 
     async def scrape_chapter_pages(self, url: str) -> list[MangaChapterPage]:
@@ -248,7 +253,7 @@ class MangakakalotScraper(BaseScraper):
                     pageUrl=url,
                     pageImageUrl=proxied_image_url,
                     pageWidth=width,
-                    pageHeight=height
+                    pageHeight=height,
                 ))
 
             return pages
@@ -259,11 +264,38 @@ class MangakakalotScraper(BaseScraper):
             data = res.json()
             return int(data.get("width", 0)), int(data.get("height", 0))
         except Exception:
-            return 0, 0
+            return 0, 0, None
 
-
-
-
+    def _build_chapters_navigation_map(self, chapters: List[MangaChapter]) -> ChaptersNavigationMap:
+        """
+        Build navigation map for efficient chapter navigation using the ChaptersNavigationMap schema.
+        Returns a ChaptersNavigationMap instance.
+        """
+        navigation_dict = {}
+        
+        for index, chapter in enumerate(chapters):
+            prev_chapter = None
+            next_chapter = None
+            
+            # Previous chapter (index - 1)
+            if index > 0:
+                next_chapter = chapters[index - 1]
+            
+            # Next chapter (index + 1)
+            if index < len(chapters) - 1:
+                prev_chapter = chapters[index + 1]
+            
+            # Create ChapterNavigation instance
+            navigation_entry = ChapterNavigation(
+                prev=prev_chapter,
+                next=next_chapter
+            )
+            
+            navigation_dict[chapter.chapterId] = navigation_entry
+        
+        # Return ChaptersNavigationMap instance
+        return ChaptersNavigationMap(navigation_dict)
+    
     def _to_mangakakalot_slug(self, query: str) -> str:
         """
         Convert a search query to Mangakakalot's expected slug format.
@@ -276,3 +308,4 @@ class MangakakalotScraper(BaseScraper):
         query = re.sub(r'[^\w\s]', '', query)  # Remove special characters
         query = re.sub(r'\s+', '_', query)     # Replace spaces with underscores
         return query
+    
