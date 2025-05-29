@@ -1,37 +1,26 @@
-# Ignore Python cache files
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-
-# Ignore virtual environment
-venv/
-.env/
-
-# Ignore SQLite database files
-*.db
-*.sqlite3
-
-# Ignore logs
-logs/
+# Logs
+logs
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
-# Ignore environment variables
-.env
-*.env
+node_modules
+dist
+dist-ssr
+*.local
 
-# Ignore IDE/editor-specific files
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Ignore compiled dependencies
-*.egg-info/
-dist/
-build/
-
-# Ignore coverage reports
-htmlcov/
-.coverage
-*.cover
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.prettierrc
+peoject_docs_PM.md
