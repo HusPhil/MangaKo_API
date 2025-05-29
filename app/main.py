@@ -15,6 +15,11 @@ app.add_middleware(
         "http://REDACTED:5173",  # ✅ Allow local frontend during development
         "http://REDACTED:5173",  # ✅ Allow local frontend during development
         "http://REDACTED:5173",
+        "http://REDACTED:8081",
+        "http://REDACTED:8081",
+        "exp://REDACTED:8081",
+        "exp://REDACTED:8081",
+        
     ],
     # allow_origins=["http://REDACTED:5173"],
     allow_credentials=True,

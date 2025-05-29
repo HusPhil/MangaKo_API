@@ -1,8 +1,10 @@
 from .mangakakalot_scraper import MangakakalotScraper
+from .comickio_scrapper import ComickioScrapper
 # from .manganelo import ManganeloScraper  # when implemented
 
 SCRAPER_MAP = {
     "mangakakalot": MangakakalotScraper,
+    "comickio": ComickioScrapper,
     # "manganelo": ManganeloScraper,
 }
 

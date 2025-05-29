@@ -3,5 +3,6 @@ SUPPORTED_SOURCES = {
     "manganelo": "https://manganelo.com",
     "asurascans": "https://asurascans.com",
     "mangareader": "https://www.mangareader.net",
+    "comickio": "https://comick.io/"
     # Add more sources as needed
 }
