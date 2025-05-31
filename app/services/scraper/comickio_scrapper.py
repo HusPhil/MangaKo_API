@@ -3,6 +3,7 @@ import re
 import asyncio
 from typing import List
 
+import json
 import httpx
 from urllib.parse import quote
 from selectolax.parser import HTMLParser
@@ -21,35 +22,47 @@ from app.schemas.manga_schema import (
 IMAGE_PROXY_WORKER_URL = "https://mangako-page-image-proxy.REDACTED/"
 IMAGE_METADATA_PROXY_WORKER_URL = "https://mangako-image-metadata-worker.REDACTED/"
 DEFAULT_HEADERS = {
-    "Referer": "https://comick.io/",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36"
-}
+  "accept": "*/*",
+  "accept-encoding": "gzip, deflate, br, zstd",
+  "accept-language": "en-US,en;q=0.9",
+  "content-length": "0",
+  "cookie": "ar_debug=1",
+  "origin": "https://vymanga.com",
+  "priority": "u=1, i",
+  "sec-fetch-dest": "empty",
+  "sec-fetch-mode": "no-cors",
+  "sec-fetch-site": "cross-site",
+  "sec-fetch-storage-access": "active",
+  "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"
+};
+
+
 SOURCE_NAME = "comickio"
 
 class ComickioScrapper(BaseScraper):
     async def scrape(self, url: str) -> dict:
+        # worker_base = "https://mangako-scraping-proxy-worker.REDACTED/"
+        # encoded = httpx.URL(worker_base + f"?url={url}")
+        
         async with httpx.AsyncClient() as client:
-            response = await client.get(url, headers=DEFAULT_HEADERS)
-            tree = HTMLParser(response.text)
-            
-            print(tree.body.text())
-            
-            title_node = tree.css_first("h3 a")
-            if not title_node:
-                return {"title": "Not found", "manga_url": None}
-            
-            title = title_node.text(strip=True)
-            manga_url = title_node.attributes.get("href")
-            
-            return {
-                "title": title,
-                "manga_url": manga_url,
-            }
+            res = await client.get(url)
+            res.raise_for_status()
+            tree = HTMLParser(res.text)
+            # return tree.body.html
+            # return tree.body.css_first('.chapter-image').html
+            return [node.html for node in tree.body.css('.chapter-image')]
+            imgs = []
+            for img_node in tree.body.css('.chapter-image'):
+                # print(img_node)
+                imgs.append(img_node.html)
+            return imgs
 
-    async def scrape_latest_manga(self, url: str) -> LatestMangaListResponse:
+    async def scrape_latest_manga(self, url: str) -> str:
         async with httpx.AsyncClient() as client:
             response = await client.get(url, headers=DEFAULT_HEADERS)
             tree = HTMLParser(response.text)
+            
+            return {tree.body.html}
 
             latest_manga: List[Manga] = []
 
