@@ -8,7 +8,8 @@ router = APIRouter()
 @router.get("/image-proxy")
 async def proxy_image(url: str):
     headers = {
-        "Referer": "https://www.mangakakalot.gg/",
+        #"Referer": "https://www.mangakakalot.gg/",
+        "Referer": "https://comick.io/home2",
         "User-Agent": "Mozilla/5.0"
     }
     async with httpx.AsyncClient() as client:
