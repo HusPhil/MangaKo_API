@@ -3,8 +3,8 @@ from typing import List, Optional
 from enum import Enum
 
 class SourceStatus(str, Enum):
-    ACTIVE = "active"
-    IN_DEVELOPMENT = "in_development"
+    READY_TO_USE = "ready to use"
+    IN_DEVELOPMENT = "in development"
     DEPRECATED = "deprecated"
 
 
