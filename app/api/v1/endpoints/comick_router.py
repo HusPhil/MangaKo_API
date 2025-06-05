@@ -16,7 +16,7 @@ async def test_comickio():
     
 @router.get("/manga/latest/{page}")
 async def get_latest_manga(page: int) -> LatestMangaListResponse:
-    url = f'https://api.comick.fun/v1.0/search/?page={page}&limit=15&sort=created_at&showall=false&t=false'
+    url = f'https://api.comick.fun/v1.0/search/?page={page}&lang=en&limit=15&sort=created_at&showall=false&t=false'
     try:
         scraper = get_scraper(source)
         latest_manga = await scraper.scrape_latest_manga(url) 
@@ -26,7 +26,7 @@ async def get_latest_manga(page: int) -> LatestMangaListResponse:
 
 @router.get("/manga/popular") # dont work
 async def get_popular_manga() -> PopularMangaListResponse:
-    url = f'https://api.comick.fun/v1.0/search/?page=1&limit=20&tachiyomi=true&sort=user_follow_count&showall=false&t=false'
+    url = f'https://api.comick.fun/v1.0/search/?page=1&lang=en&limit=20&sort=user_follow_count&showall=false&t=false'
     try:
         scraper = get_scraper(source)
         popular_manga = await scraper.scrape_popular_manga(url) 

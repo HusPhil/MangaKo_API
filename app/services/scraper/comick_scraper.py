@@ -23,106 +23,195 @@ from app.schemas.manga_schema import (
 IMAGE_PROXY_WORKER_URL = "https://mangako-page-image-proxy.REDACTED/"
 IMAGE_METADATA_PROXY_WORKER_URL = "https://mangako-image-metadata-worker.REDACTED/"
 DEFAULT_HEADERS = {
-    "Referer": "https://comick.io/home2",
-    "User-Agent": "Mozilla/5.0"
+    "accept": "application/json",
+    "accept-encoding": "gzip, deflate, br, zstd",
+    "accept-language": "en-US,en;q=0.9",
+    "priority": "u=1, i",
+    "sec-ch-ua": '"Google Chrome";v="137", "Chromium";v="137", "Not/A)Brand";v="24"',
+    "sec-ch-ua-arch": '""',
+    "sec-ch-ua-bitness": "64",
+    "sec-ch-ua-full-version": "137.0.7151.56",
+    "sec-ch-ua-full-version-list": (
+        '"Google Chrome";v="137.0.7151.56", "Chromium";v="137.0.7151.56", "Not/A)Brand";v="24.0.0.0"'
+    ),
+    "sec-ch-ua-mobile": "?1",
+    "sec-ch-ua-model": "Nexus 5",
+    "sec-ch-ua-platform": "Android",
+    "sec-ch-ua-platform-version": "6.0",
+    "sec-fetch-dest": "empty",
+    "sec-fetch-mode": "cors",
+    "sec-fetch-site": "same-origin",
+    "user-agent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36",
 }
 
+cookies = {
+    "cf_clearance": "REDACTED"
+}
+
+status_map = {
+    1: "Ongoing",
+    2: "Completed",
+    3: "Cancelled",
+    4: "Hiatus"
+}
 
 SOURCE_NAME = "comick"
 MAX_CONCURRENT_REQUESTS = 10
+BLURHASH_ENDPOINT = "https://REDACTED/api/blurhash"
+
+
 
 class ComickioScrapper(BaseScraper):
     def __init__(self):
-        self.cloudscraper = cloudscraper.create_scraper()
         self.semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
-    def _get_with_cloudscraper(self, url: str) -> Response:
-        response = self.cloudscraper.get(url)
-        response.raise_for_status()
-        return response
-
-    
     async def scrape(self) -> dict:
-        async with self.semaphore:
-            cloudscraper_response = await asyncio.to_thread(self._get_with_cloudscraper, 'https://api.comick.fun/v1.0/search/?page=1&limit=15&tachiyomi=true&sort=created_at&showall=false&t=false')
+        async with httpx.AsyncClient() as client:
+
+            url = 'https://api.comick.fun/v1.0/comic/genius-corpse-collecting-warrior'
+
+            response = await client.get(url, headers=DEFAULT_HEADERS, cookies=cookies)
+            response.raise_for_status()
+            # 1/Ongoing 2/Completed 3/Cancelled 4/Hiatus
+
+            
+
+            manga_details = MangaDetails(
+                mangaDescription=response.json()['comic']['desc'],
+                mangaAuthor=", ".join(author['name'] for author in response.json().get('authors', [])),
+                mangaStatus=status_map.get(response.json()['comic']['status'], "Unknown"),
+                mangaTags=[
+                    genre['md_genres']['name']
+                    for genre in response.json()['comic'].get('md_comic_md_genres', [])
+                ],
+                mangaAlternativeNames=[
+                    title['title']
+                    for title in response.json()['comic'].get('md_titles', [])
+                    if title['title'] != response.json()['comic']['title']
+                ]
+            )
+
+            manga_chapters = []
+            chapterNavigationMap = self.build_chapters_navigation_map(manga_chapters)
+
+            # manga_details = MangaDetails(
+            #     mangaDescription=response.json()['comic']['desc'],
+            #     mangaAuthor=response.json()['comic'].get('author', ''),
+            #     mangaStatus=response.json()['comic'].get('status', ''),
+            #     mangaTags=response.json()['comic'].get('tags', []),
+            #     mangaAlternativeNames=response.json()['comic'].get('alternative_names', [])
+            # )
+
+            
+
+
+            # MangaInfoResponse (
+            #     chaptersNavigationMap=
+            #     mangaChapters=
+            #     mangaDetails=
+            # )
+
+            print(f"[DEBUG] Fetched URL: {url}")
+
+            # latest_manga = [Manga(
+            #     mangaSource=SUPPORTED_SOURCES[SOURCE_NAME],
+            #     mangaId=str(manga['id']), 
+            #     mangaTitle=manga['title'],
+            #     mangaCover=manga['cover_url'],
+            #     mangaUrl=f"https://comick.io/comic/{manga['slug']}"
+            # ) for manga in response.json()]
+
+            return {'res': manga_details, 'source': SOURCE_NAME}
+
+    #    return {'source': SOURCE_NAME, 'message': 'this is the comick scraper'}
+
+    async def scrape_latest_manga(self, url: str):
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, headers=DEFAULT_HEADERS, cookies=cookies)
+            response.raise_for_status()
+            print(f"[DEBUG] Fetched URL: {url}")
 
             latest_manga = [Manga(
                 mangaSource=SUPPORTED_SOURCES[SOURCE_NAME],
-                mangaId=str(manga['id']),
+                mangaId=str(manga['hid']),
                 mangaTitle=manga['title'],
-                mangaCover=manga['cover_url'],
-                mangaUrl=f"https://comick.io/comic/{manga['slug']}"
-            ) for manga in cloudscraper_response.json()]
-            # manga = cloudscraper_response.json()[0]  # Get the first manga item 
-            
-            # # return manga
-            # latest_manga = Manga(
-            #     mangaSource=SUPPORTED_SOURCES[SOURCE_NAME],
-            #     mangaId=str(manga['id']),
-            #     mangaTitle=manga['title'],
-            #     mangaCover=manga['cover_url'],
-            #     mangaUrl=f"https://comick.io/manga/{manga['slug']}"
-            # )
-
-            return {'res': latest_manga, 'source': SOURCE_NAME}
-       
-    #    return {'source': SOURCE_NAME, 'message': 'this is the comick scraper'}
-
-    
-
-    async def scrape_latest_manga(self, url: str):
-        async with self.semaphore:
-            cloudscraper_response = await asyncio.to_thread(self._get_with_cloudscraper, url)
-            return {'res': cloudscraper_response.text, 'source': SOURCE_NAME}
-
-            for item in tree.css("div.list-truyen-item-wrap"):
-                a_tag = item.css_first("a[data-id]")
-                if not a_tag:
-                    continue
-
-                manga_url = a_tag.attributes.get("href")
-                manga_title = a_tag.attributes.get("title")
-                img_tag = a_tag.css_first("img")
-
-                if not manga_url or not manga_title or not img_tag:
-                    continue
-
-                original_cover_url = img_tag.attributes.get("data-src") or img_tag.attributes.get("src")
-                manga_cover = f"{IMAGE_PROXY_WORKER_URL}?url={quote(original_cover_url)}"
-
-                manga_id = hashlib.md5(manga_url.encode()).hexdigest()
-
-                latest_manga.append(Manga(
-                    mangaSource=SUPPORTED_SOURCES[SOURCE_NAME],
-                    mangaId=manga_id,
-                    mangaTitle=manga_title,
-                    mangaUrl=manga_url,
-                    mangaCover=manga_cover,
-                ))
+                mangaCover=f"https://meo.comick.pictures/{manga['md_covers'][0]["b2key"]}",
+                mangaUrl=f"https://api.comick.fun/v1.0/comic/{manga['slug']}"
+            ) for manga in response.json()]
 
             return LatestMangaListResponse(
                 source=SOURCE_NAME,
                 latest_manga=latest_manga
             )
-        
-    async def scrape_popular_manga(self, url: str) -> PopularMangaListResponse:
-        async with self.semaphore:
-            cloudscraper_response = await asyncio.to_thread(self._get_with_cloudscraper, url)
 
-            latest_manga = [Manga(
+    async def scrape_popular_manga(self, url: str) -> PopularMangaListResponse:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, headers=DEFAULT_HEADERS, cookies=cookies)
+            response.raise_for_status()
+
+            popular_manga = [Manga(
                 mangaSource=SUPPORTED_SOURCES[SOURCE_NAME],
-                mangaId=str(manga['id']),
+                mangaId=str(manga['hid']),
                 mangaTitle=manga['title'],
-                mangaCover=manga['cover_url'],
-                mangaUrl=f"https://comick.io/comic/{manga['slug']}"
-            ) for manga in cloudscraper_response.json()]
+                mangaCover=f"https://meo.comick.pictures/{manga['md_covers'][0]["b2key"]}",
+                mangaUrl=f"https://api.comick.fun/v1.0/comic/{manga['slug']}"
+            ) for manga in response.json()]
 
 
             return PopularMangaListResponse(
                 sourceName=SOURCE_NAME,
-                popular_manga=latest_manga
+                popular_manga=popular_manga
             )
-        
+    
+    async def scrape_manga_info(self, url: str) -> MangaInfoResponse:
+        async with httpx.AsyncClient() as client:
+
+            response = await client.get(url, headers=DEFAULT_HEADERS, cookies=cookies)
+            response.raise_for_status()
+            # 1/Ongoing 2/Completed 3/Cancelled 4/Hiatus
+
+            
+
+            manga_details = MangaDetails(
+                mangaDescription=response.json()['comic']['desc'],
+                mangaAuthor=", ".join(author['name'] for author in response.json().get('authors', [])),
+                mangaStatus=status_map.get(response.json()['comic']['status'], "Unknown"),
+                mangaTags=[
+                    genre['md_genres']['name']
+                    for genre in response.json()['comic'].get('md_comic_md_genres', [])
+                ],
+                mangaAlternativeNames=[
+                    title['title']
+                    for title in response.json()['comic'].get('md_titles', [])
+                    if title['title'] != response.json()['comic']['title']
+                ]
+            )
+            manga_hid = response.json()['comic']['hid']
+            manga_chapters = []
+
+            chapter_url = f"https://api.comick.fun/comic/{manga_hid}/chapters?limit=10000&lang=en"
+
+            response = await client.get(chapter_url, headers=DEFAULT_HEADERS, cookies=cookies)
+            response.raise_for_status()
+
+            for chapter in response.json()['chapters']:
+                # print(f"[DEBUG] Processing chapter: {chapter['hid']}")
+                res_chapter = MangaChapter(
+                    chapterId=chapter['hid'],
+                    chapterTitle=f"Chapter {chapter['chap']}" if chapter['chap'] else "No Title",
+                    chapterUrl=f"https://api.comick.fun/chapter/{chapter['hid']}/get_images",  # Replace with your actual URL format
+                    chapterTimeUploaded=chapter['updated_at']
+                )
+                manga_chapters.append(res_chapter)
+
+            chapterNavigationMap = self._build_chapters_navigation_map(manga_chapters)
+
+            return MangaInfoResponse(
+                mangaDetails=manga_details,
+                mangaChapters=manga_chapters,
+                chaptersNavigationMap=chapterNavigationMap
+            )
+
     async def scrape_manga_search(self, keyword: str) -> MangaSearchResponse:
         async with httpx.AsyncClient() as client:
             search_url = f"https://comick.io/search?q={self._to_comickio_slug(keyword)}" # ewan ko pa to
@@ -166,133 +255,37 @@ class ComickioScrapper(BaseScraper):
                 results=results
             )
 
-    async def scrape_manga_info(self, url: str) -> MangaInfoResponse:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(url, headers=DEFAULT_HEADERS)
-            print(f"[DEBUG] Status Code: {resp.status_code}")
-            print(f"[DEBUG] Fetched URL: {url}")
-            print(f"[DEBUG] Response snippet: {resp.text[:500]}")  # Preview first 500 chars
-
-            html = HTMLParser(resp.text)
-
-        # Description
-        desc_node = html.css_first('#contentBox')
-        print(f"[DEBUG] desc_node: {desc_node}")
-        raw_description = desc_node.text(strip=True) if desc_node else ""
-        manga_description = re.sub(r'\s+', ' ', raw_description).strip()
-        print(f"[DEBUG] manga_description: {manga_description}")
-
-        # Author
-        author_node = html.css_first('.comic-info-section .info-wrap a[href*="/author/"]')
-        print(f"[DEBUG] author_node: {author_node}")
-        manga_author = author_node.text(strip=True) if author_node else ""
-        print(f"[DEBUG] manga_author: {manga_author}")
-
-        # Status
-        status_node = html.css_first('.comic-info-section .info-wrap div:nth-of-type(2) p:nth-of-type(2)')
-        print(f"[DEBUG] status_node: {status_node}")
-        manga_status = status_node.text(strip=True) if status_node else ""
-        print(f"[DEBUG] manga_status: {manga_status}")
-
-        # Genres
-        genre_nodes = html.css('.genre-list a')
-        print(f"[DEBUG] genre_nodes: {genre_nodes}")
-        manga_tags = [node.text(strip=True) for node in genre_nodes]
-        print(f"[DEBUG] manga_tags: {manga_tags}")
-
-        # Alternative Names
-        alt_node = html.css_first('h2.story-alternative')
-        print(f"[DEBUG] alt_node: {alt_node}")
-        raw_alt_text = alt_node.text(strip=True) if alt_node else ""
-        cleaned_alt_text = re.sub(r'^Alternative\s*:\s*', '', raw_alt_text)
-        manga_alternative_names = [alt.strip() for alt in re.split(r'[;,]', cleaned_alt_text) if alt.strip()]
-        print(f"[DEBUG] manga_alternative_names: {manga_alternative_names}")
-
-        # Chapters
-        chapter_nodes = html.css('.chapter-list .row')
-        print(f"[DEBUG] chapter_nodes: {chapter_nodes}")
-        chapters = []
-        for row in chapter_nodes:
-            link_node = row.css_first('a')
-            time_node = row.css('span')[-1] if row.css('span') else None
-
-            if link_node and time_node:
-                chapter_title = link_node.text(strip=True)
-                chapter_url = link_node.attributes.get("href", "")
-                chapter_id = hashlib.md5(chapter_url.encode()).hexdigest()
-                chapter_time = time_node.text(strip=True)
-
-                chapters.append(MangaChapter(
-                    chapterId=chapter_id,
-                    chapterTitle=chapter_title,
-                    chapterUrl=chapter_url,
-                    chapterTimeUploaded=chapter_time
-                ))
-
-        print(f"[DEBUG] chapters found: {len(chapters)}")
-
-        details = MangaDetails(
-            mangaDescription=manga_description,
-            mangaAuthor=manga_author,
-            mangaStatus=manga_status,
-            mangaTags=manga_tags,
-            mangaAlternativeNames=manga_alternative_names,
-        )
-
-        return MangaInfoResponse(
-            mangaDetails=details,
-            mangaChapters=chapters
-        )
-
     async def scrape_chapter_pages(self, url: str) -> list[MangaChapterPage]:
         async with httpx.AsyncClient() as client:
-            response = await client.get(url, headers=DEFAULT_HEADERS)
-            tree = HTMLParser(response.text)
+            response = await client.get(url, headers=DEFAULT_HEADERS, cookies=cookies)
+            response.raise_for_status()
+            
+            pages_data = response.json()
 
-            container = tree.css_first('.container-chapter-reader')
-            if not container:
-                return []
+            # Construct full image URLs
+            image_urls = [f"https://meo.comick.pictures/{page['b2key']}" for page in pages_data]
+            
 
-            image_nodes = container.css('img')
-            pages: list[MangaChapterPage] = []
+            # Fetch blurhashes concurrently
+            blurhash_tasks = [
+                self.get_blurhash(client, BLURHASH_ENDPOINT, image_url)
+                for image_url in image_urls
+            ]
+            blurhashes = await asyncio.gather(*blurhash_tasks)
 
-            image_urls = []
-            for index, img in enumerate(image_nodes):
-                src = img.attributes.get('src')
-                onerror = img.attributes.get('onerror')
-                fallback_src = re.search(r"this\.src='(.*?)'", onerror).group(1) if onerror else None
-                image_url = src or fallback_src
-                if not image_url:
-                    continue
-                image_urls.append((index, image_url))
-
-            # Fetch all metadata concurrently
-            tasks = [self.get_image_dimensions(client, image_url) for _, image_url in image_urls]
-            dimensions = await asyncio.gather(*tasks)
-
-            for (index, image_url), (width, height) in zip(image_urls, dimensions):
-                proxied_image_url = f"{IMAGE_PROXY_WORKER_URL}?url={quote(image_url)}"
-                page_id = hashlib.md5(f"{url}-{index}".encode()).hexdigest()
-
+            # Construct MangaChapterPage list
+            pages = []
+            for index, (page_data, image_url, blurhash) in enumerate(zip(pages_data, image_urls, blurhashes)):
                 pages.append(MangaChapterPage(
-                    pageId=page_id,
+                    pageId=page_data['b2key'],
                     pageUrl=url,
-                    pageImageUrl=proxied_image_url,
-                    pageWidth=width,
-                    pageHeight=height
+                    pageImageUrl=image_url,
+                    pageWidth=page_data['w'],
+                    pageHeight=page_data['h'],
+                    pageBlurhash=blurhash or "",  # fallback to empty string
                 ))
 
             return pages
-
-    async def get_image_dimensions(self, client: httpx.AsyncClient, image_url: str) -> tuple[int, int]:
-        try:
-            res = await client.get(f"{IMAGE_METADATA_PROXY_WORKER_URL}?url={quote(image_url)}", headers={}, timeout=5)
-            data = res.json()
-            return int(data.get("width", 0)), int(data.get("height", 0))
-        except Exception:
-            return 0, 0
-        
-        
         
     def _to_comickio_slug(self, query: str) -> str:
         """

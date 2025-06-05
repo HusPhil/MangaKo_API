@@ -27,8 +27,9 @@ DEFAULT_HEADERS = {
     "Referer": "https://www.mangakakalot.gg/",
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36"
 }
-SOURCE_NAME = "mangakakalot"
 
+SOURCE_NAME = "mangakakalot"
+BLURHASH_ENDPOINT = "https://REDACTED/api/blurhash"
 
 class MangakakalotScraper(BaseScraper):
     async def scrape(self) -> dict:
@@ -152,58 +153,58 @@ class MangakakalotScraper(BaseScraper):
             resp = await client.get(url, headers=DEFAULT_HEADERS)
             html = HTMLParser(resp.text)
 
-        desc_node = html.css_first('#contentBox')
-        raw_description = desc_node.text(strip=True) if desc_node else ""
-        manga_description = re.sub(r'\s+', ' ', raw_description).strip()
+            desc_node = html.css_first('#contentBox')
+            raw_description = desc_node.text(strip=True) if desc_node else ""
+            manga_description = re.sub(r'\s+', ' ', raw_description).strip()
 
-        author_node = html.css_first('.comic-info-section .info-wrap a[href*="/author/"]')
-        manga_author = author_node.text(strip=True) if author_node else ""
+            author_node = html.css_first('.comic-info-section .info-wrap a[href*="/author/"]')
+            manga_author = author_node.text(strip=True) if author_node else ""
 
-        status_node = html.css_first('.comic-info-section .info-wrap div:nth-of-type(2) p:nth-of-type(2)')
-        manga_status = status_node.text(strip=True) if status_node else ""
+            status_node = html.css_first('.comic-info-section .info-wrap div:nth-of-type(2) p:nth-of-type(2)')
+            manga_status = status_node.text(strip=True) if status_node else ""
 
-        genre_nodes = html.css('.genre-list a')
-        manga_tags = [node.text(strip=True) for node in genre_nodes]
+            genre_nodes = html.css('.genre-list a')
+            manga_tags = [node.text(strip=True) for node in genre_nodes]
 
-        alt_node = html.css_first('h2.story-alternative')
-        raw_alt_text = alt_node.text(strip=True) if alt_node else ""
-        cleaned_alt_text = re.sub(r'^Alternative\s*:\s*', '', raw_alt_text)
-        manga_alternative_names = [alt.strip() for alt in re.split(r'[;,]', cleaned_alt_text) if alt.strip()]
+            alt_node = html.css_first('h2.story-alternative')
+            raw_alt_text = alt_node.text(strip=True) if alt_node else ""
+            cleaned_alt_text = re.sub(r'^Alternative\s*:\s*', '', raw_alt_text)
+            manga_alternative_names = [alt.strip() for alt in re.split(r'[;,]', cleaned_alt_text) if alt.strip()]
 
-        details = MangaDetails(
-            mangaDescription=manga_description,
-            mangaAuthor=manga_author,
-            mangaStatus=manga_status,
-            mangaTags=manga_tags,
-            mangaAlternativeNames=manga_alternative_names,
-        )
+            details = MangaDetails(
+                mangaDescription=manga_description,
+                mangaAuthor=manga_author,
+                mangaStatus=manga_status,
+                mangaTags=manga_tags,
+                mangaAlternativeNames=manga_alternative_names,
+            )
 
-        chapter_nodes = html.css('.chapter-list .row')
-        chapters = []
-        for row in chapter_nodes:
-            link_node = row.css_first('a')
-            time_node = row.css('span')[-1]
+            chapter_nodes = html.css('.chapter-list .row')
+            chapters = []
+            for row in chapter_nodes:
+                link_node = row.css_first('a')
+                time_node = row.css('span')[-1]
 
-            if link_node and time_node:
-                chapter_title = link_node.text(strip=True)
-                chapter_url = link_node.attributes.get("href", "")
-                chapter_id = hashlib.md5(chapter_url.encode()).hexdigest()
-                chapter_time = time_node.text(strip=True)
+                if link_node and time_node:
+                    chapter_title = link_node.text(strip=True)
+                    chapter_url = link_node.attributes.get("href", "")
+                    chapter_id = hashlib.md5(chapter_url.encode()).hexdigest()
+                    chapter_time = time_node.text(strip=True)
 
-                chapters.append(MangaChapter(
-                    chapterId=chapter_id,
-                    chapterTitle=chapter_title,
-                    chapterUrl=chapter_url,
-                    chapterTimeUploaded=chapter_time
-                ))
-        
-        chapters_navigation_map = self._build_chapters_navigation_map(chapters)
+                    chapters.append(MangaChapter(
+                        chapterId=chapter_id,
+                        chapterTitle=chapter_title,
+                        chapterUrl=chapter_url,
+                        chapterTimeUploaded=chapter_time
+                    ))
+            
+            chapters_navigation_map = self._build_chapters_navigation_map(chapters)
 
-        return MangaInfoResponse(
-            mangaDetails=details,
-            mangaChapters=chapters,
-            chaptersNavigationMap=chapters_navigation_map
-        )
+            return MangaInfoResponse(
+                mangaDetails=details,
+                mangaChapters=chapters,
+                chaptersNavigationMap=chapters_navigation_map
+            )
 
     async def scrape_chapter_pages(self, url: str) -> list[MangaChapterPage]:
         async with httpx.AsyncClient() as client:
@@ -230,7 +231,7 @@ class MangakakalotScraper(BaseScraper):
                 proxied_url = f"{IMAGE_PROXY_WORKER_URL}?url={quote(image_url)}"
                 image_urls.append((index, image_url, proxied_url))
 
-            BLURHASH_ENDPOINT = "https://REDACTED/api/blurhash"
+            
 
             # Fetch all metadata and blurhash concurrently using the proxied URL
             dimension_tasks = [self.get_image_dimensions(client, image_url) for _, image_url, _ in image_urls]
@@ -262,44 +263,9 @@ class MangakakalotScraper(BaseScraper):
         except Exception:
             return 0, 0
 
-    async def get_blurhash(self, client: httpx.AsyncClient, endpoint: str, image_url: str) -> str | None:
-        # return ""
-        try:
-            res = await client.get(f"{endpoint}?url={quote(image_url)}", timeout=5)
-            res.raise_for_status()
-            return res.json().get("blurhash")
-        except Exception:
-            return None
+    
 
-    def _build_chapters_navigation_map(self, chapters: List[MangaChapter]) -> ChaptersNavigationMap:
-        """
-        Build navigation map for efficient chapter navigation using the ChaptersNavigationMap schema.
-        Returns a ChaptersNavigationMap instance.
-        """
-        navigation_dict = {}
-        
-        for index, chapter in enumerate(chapters):
-            prev_chapter = None
-            next_chapter = None
-            
-            # Previous chapter (index - 1)
-            if index > 0:
-                next_chapter = chapters[index - 1]
-            
-            # Next chapter (index + 1)
-            if index < len(chapters) - 1:
-                prev_chapter = chapters[index + 1]
-            
-            # Create ChapterNavigation instance
-            navigation_entry = ChapterNavigation(
-                prev=prev_chapter,
-                next=next_chapter
-            )
-            
-            navigation_dict[chapter.chapterId] = navigation_entry
-        
-        # Return ChaptersNavigationMap instance
-        return ChaptersNavigationMap(navigation_dict)
+    
     
     def _to_mangakakalot_slug(self, query: str) -> str:
         """
