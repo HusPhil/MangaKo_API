@@ -18,12 +18,4 @@ def test_scrape():
 
 @router.get("/sources")
 def get_supported_sources() -> List[Source]:
-    return [
-        Source(
-            sourceId=hashlib.md5(f"{SUPPORTED_SOURCES[source]['url']}".encode()).hexdigest(),
-            sourceStatus=SUPPORTED_SOURCES[source]['status'],
-            sourceName=source,
-            sourceUrl=SUPPORTED_SOURCES[source]['url']
-        )
-        for source, url in SUPPORTED_SOURCES.items()
-    ]
+    return list(SUPPORTED_SOURCES.values())

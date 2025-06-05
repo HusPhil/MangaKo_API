@@ -12,7 +12,7 @@ source = 'mangakakalot'
 async def test_mangakakalot():
     try:
         scraper = get_scraper(source)
-        return await scraper.scrape("https://mangaplus.shueisha.co.jp/viewer/1000177?timestamp=1748017206279")
+        return await scraper.scrape()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

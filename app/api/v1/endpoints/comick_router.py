@@ -7,25 +7,26 @@ router = APIRouter()
 source = 'comickio'
 
 @router.get("/")
-async def test_comickio(url: str):
+async def test_comickio():
     try:
         scraper = get_scraper(source)
-        return await scraper.scrape(url)
+        return await scraper.scrape()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
-@router.get("/manga/latest/") # dont work
-async def get_lastest_manga(url: str) -> LatestMangaListResponse:
+@router.get("/manga/latest/{page}")
+async def get_latest_manga(page: int) -> LatestMangaListResponse:
+    url = f'https://api.comick.fun/v1.0/search/?page={page}&limit=15&sort=created_at&showall=false&t=false'
     try:
         scraper = get_scraper(source)
-        latest_manga = await scraper.scrape_latest_manga(url)
+        latest_manga = await scraper.scrape_latest_manga(url) 
         return latest_manga
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
 @router.get("/manga/popular") # dont work
 async def get_popular_manga() -> PopularMangaListResponse:
-    url = f'https://comick.io/home2'
+    url = f'https://api.comick.fun/v1.0/search/?page=1&limit=20&tachiyomi=true&sort=user_follow_count&showall=false&t=false'
     try:
         scraper = get_scraper(source)
         popular_manga = await scraper.scrape_popular_manga(url) 

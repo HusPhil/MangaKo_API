@@ -6,7 +6,7 @@ from typing import List
 import httpx
 from urllib.parse import quote
 from selectolax.parser import HTMLParser
-
+from app.core.sources import SUPPORTED_SOURCES
 from .base import BaseScraper
 from app.schemas.manga_schema import (
     Manga,
@@ -31,24 +31,8 @@ SOURCE_NAME = "mangakakalot"
 
 
 class MangakakalotScraper(BaseScraper):
-    async def scrape(self, url: str) -> dict:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url, headers=DEFAULT_HEADERS)
-            tree = HTMLParser(response.text)
-
-            print(tree.body.text())
-
-            title_node = tree.css_first("h3 a")
-            if not title_node:
-                return {"title": "Not found", "manga_url": None}
-
-            title = title_node.text(strip=True)
-            manga_url = title_node.attributes.get("href")
-
-            return {
-                "title": title,
-                "manga_url": manga_url,
-            }
+    async def scrape(self) -> dict:
+        return {"source": SOURCE_NAME, "message": "this is the mangakakalot scraper"}
 
     async def scrape_latest_manga(self, url: str) -> LatestMangaListResponse:
         async with httpx.AsyncClient() as client:
@@ -75,10 +59,11 @@ class MangakakalotScraper(BaseScraper):
                 manga_id = hashlib.md5(manga_url.encode()).hexdigest()
 
                 latest_manga.append(Manga(
+                    mangaSource=SUPPORTED_SOURCES[SOURCE_NAME],
                     mangaId=manga_id,
                     mangaTitle=manga_title,
                     mangaUrl=manga_url,
-                    mangaCover=manga_cover
+                    mangaCover=manga_cover,
                 ))
 
             return LatestMangaListResponse(
@@ -111,6 +96,7 @@ class MangakakalotScraper(BaseScraper):
                 manga_id = hashlib.md5(manga_url.encode()).hexdigest()
 
                 popular_manga.append(Manga(
+                    mangaSource=SUPPORTED_SOURCES[SOURCE_NAME],
                     mangaId=manga_id,
                     mangaTitle=manga_title,
                     mangaUrl=manga_url,
@@ -118,7 +104,7 @@ class MangakakalotScraper(BaseScraper):
                 ))
 
             return PopularMangaListResponse(
-                source=SOURCE_NAME,
+                sourceName=SOURCE_NAME,
                 popular_manga=popular_manga
             )
         
@@ -149,6 +135,7 @@ class MangakakalotScraper(BaseScraper):
                 manga_id = hashlib.md5(manga_url.encode()).hexdigest()
 
                 results.append(Manga(
+                    mangaSource=SUPPORTED_SOURCES[SOURCE_NAME],
                     mangaId=manga_id,
                     mangaTitle=manga_title,
                     mangaUrl=manga_url,

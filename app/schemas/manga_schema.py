@@ -1,7 +1,9 @@
 from pydantic import BaseModel, RootModel
 from typing import List, Optional, Dict
+from app.schemas.sources_schema import Source
 
 class Manga(BaseModel):
+    mangaSource: Source
     mangaId: str
     mangaTitle: str
     mangaUrl: str
@@ -13,7 +15,7 @@ class LatestMangaListResponse(BaseModel):
 
 
 class PopularMangaListResponse(BaseModel):
-    source: str
+    sourceName: str
     popular_manga: List[Manga]
 
 class MangaSearchResponse(BaseModel):

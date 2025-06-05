@@ -1,5 +1,6 @@
 from .mangakakalot_scraper import MangakakalotScraper
-from .comickio_scrapper import ComickioScrapper
+from .comick_scraper import ComickioScrapper
+from .base import BaseScraper
 # from .manganelo import ManganeloScraper  # when implemented
 
 SCRAPER_MAP = {
@@ -8,7 +9,7 @@ SCRAPER_MAP = {
     # "manganelo": ManganeloScraper,
 }
 
-def get_scraper(source: str):
+def get_scraper(source: str) -> BaseScraper:
     scraper_class = SCRAPER_MAP.get(source)
     if not scraper_class:
         raise ValueError(f"No scraper available for source: {source}")

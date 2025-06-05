@@ -1,13 +1,14 @@
 import hashlib
 import re
+from requests import Response
 import asyncio
 from typing import List
 
-import json
+import cloudscraper, asyncio
 import httpx
 from urllib.parse import quote
 from selectolax.parser import HTMLParser
-
+from app.core.sources import SUPPORTED_SOURCES
 from .base import BaseScraper
 from app.schemas.manga_schema import (
     Manga,
@@ -22,61 +23,57 @@ from app.schemas.manga_schema import (
 IMAGE_PROXY_WORKER_URL = "https://mangako-page-image-proxy.REDACTED/"
 IMAGE_METADATA_PROXY_WORKER_URL = "https://mangako-image-metadata-worker.REDACTED/"
 DEFAULT_HEADERS = {
-  "accept": "*/*",
-  "accept-encoding": "gzip, deflate, br, zstd",
-  "accept-language": "en-US,en;q=0.9",
-  "content-length": "0",
-  "cookie": "ar_debug=1",
-  "origin": "https://vymanga.com",
-  "priority": "u=1, i",
-  "sec-fetch-dest": "empty",
-  "sec-fetch-mode": "no-cors",
-  "sec-fetch-site": "cross-site",
-  "sec-fetch-storage-access": "active",
-  "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"
-};
+    "Referer": "https://comick.io/home2",
+    "User-Agent": "Mozilla/5.0"
+}
 
 
-SOURCE_NAME = "comickio"
+SOURCE_NAME = "comick"
+MAX_CONCURRENT_REQUESTS = 10
 
 class ComickioScrapper(BaseScraper):
-    
-    async def testWebView(self, html: str):
-        # save into json file
-        with open("testWebView.json", "w") as f:
-            f.write(html)
-        
-        tree = HTMLParser(html)
-        
-        
-        
-        return tree.css_first('.section-header')
-    
-    async def scrape(self, url: str) -> dict:
-        # worker_base = "https://mangako-scraping-proxy-worker.REDACTED/"
-        # encoded = httpx.URL(worker_base + f"?url={url}")
-        
-        async with httpx.AsyncClient() as client:
-            res = await client.get(url)
-            res.raise_for_status()
-            tree = HTMLParser(res.text)
-            return tree.body.html
-            # return tree.body.css_first('.chapter-image').html
-            return [node.html for node in tree.body.css('.chapter-image')]
-            imgs = []
-            for img_node in tree.body.css('.chapter-image'):
-                # print(img_node)
-                imgs.append(img_node.html)
-            return imgs
+    def __init__(self):
+        self.cloudscraper = cloudscraper.create_scraper()
+        self.semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
-    async def scrape_latest_manga(self, url: str) -> str:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url, headers=DEFAULT_HEADERS)
-            tree = HTMLParser(response.text)
+    def _get_with_cloudscraper(self, url: str) -> Response:
+        response = self.cloudscraper.get(url)
+        response.raise_for_status()
+        return response
+
+    
+    async def scrape(self) -> dict:
+        async with self.semaphore:
+            cloudscraper_response = await asyncio.to_thread(self._get_with_cloudscraper, 'https://api.comick.fun/v1.0/search/?page=1&limit=15&tachiyomi=true&sort=created_at&showall=false&t=false')
+
+            latest_manga = [Manga(
+                mangaSource=SUPPORTED_SOURCES[SOURCE_NAME],
+                mangaId=str(manga['id']),
+                mangaTitle=manga['title'],
+                mangaCover=manga['cover_url'],
+                mangaUrl=f"https://comick.io/comic/{manga['slug']}"
+            ) for manga in cloudscraper_response.json()]
+            # manga = cloudscraper_response.json()[0]  # Get the first manga item 
             
-            return {tree.body.html}
+            # # return manga
+            # latest_manga = Manga(
+            #     mangaSource=SUPPORTED_SOURCES[SOURCE_NAME],
+            #     mangaId=str(manga['id']),
+            #     mangaTitle=manga['title'],
+            #     mangaCover=manga['cover_url'],
+            #     mangaUrl=f"https://comick.io/manga/{manga['slug']}"
+            # )
 
-            latest_manga: List[Manga] = []
+            return {'res': latest_manga, 'source': SOURCE_NAME}
+       
+    #    return {'source': SOURCE_NAME, 'message': 'this is the comick scraper'}
+
+    
+
+    async def scrape_latest_manga(self, url: str):
+        async with self.semaphore:
+            cloudscraper_response = await asyncio.to_thread(self._get_with_cloudscraper, url)
+            return {'res': cloudscraper_response.text, 'source': SOURCE_NAME}
 
             for item in tree.css("div.list-truyen-item-wrap"):
                 a_tag = item.css_first("a[data-id]")
@@ -96,51 +93,34 @@ class ComickioScrapper(BaseScraper):
                 manga_id = hashlib.md5(manga_url.encode()).hexdigest()
 
                 latest_manga.append(Manga(
+                    mangaSource=SUPPORTED_SOURCES[SOURCE_NAME],
                     mangaId=manga_id,
                     mangaTitle=manga_title,
                     mangaUrl=manga_url,
-                    mangaCover=manga_cover
+                    mangaCover=manga_cover,
                 ))
 
             return LatestMangaListResponse(
                 source=SOURCE_NAME,
                 latest_manga=latest_manga
             )
-
+        
     async def scrape_popular_manga(self, url: str) -> PopularMangaListResponse:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url, headers=DEFAULT_HEADERS)
-            tree = HTMLParser(response.text)
+        async with self.semaphore:
+            cloudscraper_response = await asyncio.to_thread(self._get_with_cloudscraper, url)
 
-            popular_manga: List[Manga] = []
+            latest_manga = [Manga(
+                mangaSource=SUPPORTED_SOURCES[SOURCE_NAME],
+                mangaId=str(manga['id']),
+                mangaTitle=manga['title'],
+                mangaCover=manga['cover_url'],
+                mangaUrl=f"https://comick.io/comic/{manga['slug']}"
+            ) for manga in cloudscraper_response.json()]
 
-            for item in tree.css("div.owl-carousel div.item"):
-                title_tag = item.css_first("div.slide-caption h3 a")
-                img_tag = item.css_first("img")
-
-                if not title_tag or not img_tag:
-                    continue
-
-                manga_title = title_tag.text(strip=True)
-                manga_url = title_tag.attributes.get("href")
-                original_cover_url = img_tag.attributes.get("src")
-                manga_cover = f"{IMAGE_PROXY_WORKER_URL}?url={quote(original_cover_url)}"
-
-                if not manga_url:
-                    continue
-
-                manga_id = hashlib.md5(manga_url.encode()).hexdigest()
-
-                popular_manga.append(Manga(
-                    mangaId=manga_id,
-                    mangaTitle=manga_title,
-                    mangaUrl=manga_url,
-                    mangaCover=manga_cover
-                ))
 
             return PopularMangaListResponse(
-                source=SOURCE_NAME,
-                popular_manga=popular_manga
+                sourceName=SOURCE_NAME,
+                popular_manga=latest_manga
             )
         
     async def scrape_manga_search(self, keyword: str) -> MangaSearchResponse:
