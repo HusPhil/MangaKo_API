@@ -1,8 +1,23 @@
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.schemas.sources_schema import SourceStatus
+
 SUPPORTED_SOURCES = {
-    "mangakakalot": "https://www.mangakakalot.gg/",
-    "manganelo": "https://manganelo.com",
-    "asurascans": "https://asurascans.com",
-    "mangareader": "https://www.mangareader.net",
-    "comickio": "https://comick.io/"
-    # Add more sources as needed
+    "mangakakalot": {
+        "url": "https://mangakakalot.com",
+        "status": SourceStatus.ACTIVE
+    },
+    "manganelo": {
+        "url": "https://manganelo.com",
+        "status": SourceStatus.ACTIVE   
+    },
+    "asurascans": {
+        "url": "https://asurascans.com",
+        "status": SourceStatus.ACTIVE
+    },
+    "comickio": {
+        "url": "https://comick.io/",
+        "status": SourceStatus.ACTIVE
+    }
 }

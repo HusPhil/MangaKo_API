@@ -40,6 +40,18 @@ DEFAULT_HEADERS = {
 SOURCE_NAME = "comickio"
 
 class ComickioScrapper(BaseScraper):
+    
+    async def testWebView(self, html: str):
+        # save into json file
+        with open("testWebView.json", "w") as f:
+            f.write(html)
+        
+        tree = HTMLParser(html)
+        
+        
+        
+        return tree.css_first('.section-header')
+    
     async def scrape(self, url: str) -> dict:
         # worker_base = "https://mangako-scraping-proxy-worker.REDACTED/"
         # encoded = httpx.URL(worker_base + f"?url={url}")
@@ -48,7 +60,7 @@ class ComickioScrapper(BaseScraper):
             res = await client.get(url)
             res.raise_for_status()
             tree = HTMLParser(res.text)
-            # return tree.body.html
+            return tree.body.html
             # return tree.body.css_first('.chapter-image').html
             return [node.html for node in tree.body.css('.chapter-image')]
             imgs = []

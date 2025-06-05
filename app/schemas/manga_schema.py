@@ -39,6 +39,7 @@ class MangaChapterPage(BaseModel):
     pageImageUrl: str
     pageWidth: int
     pageHeight: int
+    pageBlurhash: str
 
 class ChapterNavigation(BaseModel):
     prev: Optional[MangaChapter]

@@ -15,3 +15,9 @@ async def proxy_image(url: str):
     async with httpx.AsyncClient() as client:
         response = await client.get(url, headers=headers)
         return Response(content=response.content, media_type="image/jpeg")
+
+
+    
+
+    
+    

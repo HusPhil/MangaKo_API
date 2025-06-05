@@ -238,25 +238,34 @@ class MangakakalotScraper(BaseScraper):
                 image_url = src or fallback_src
                 if not image_url:
                     continue
-                image_urls.append((index, image_url))
 
-            # Fetch all metadata concurrently
-            tasks = [self.get_image_dimensions(client, image_url) for _, image_url in image_urls]
-            dimensions = await asyncio.gather(*tasks)
+                # Proxify the URL now and save it
+                proxied_url = f"{IMAGE_PROXY_WORKER_URL}?url={quote(image_url)}"
+                image_urls.append((index, image_url, proxied_url))
 
-            for (index, image_url), (width, height) in zip(image_urls, dimensions):
-                proxied_image_url = f"{IMAGE_PROXY_WORKER_URL}?url={quote(image_url)}"
+            BLURHASH_ENDPOINT = "https://REDACTED/api/blurhash"
+
+            # Fetch all metadata and blurhash concurrently using the proxied URL
+            dimension_tasks = [self.get_image_dimensions(client, image_url) for _, image_url, _ in image_urls]
+            blurhash_tasks = [self.get_blurhash(client, BLURHASH_ENDPOINT, proxied_url) for _, _, proxied_url in image_urls]
+
+            dimensions = await asyncio.gather(*dimension_tasks)
+            blurhashes = await asyncio.gather(*blurhash_tasks)
+
+            for (index, image_url, proxied_url), (width, height), blurhash in zip(image_urls, dimensions, blurhashes):
                 page_id = hashlib.md5(f"{url}-{index}".encode()).hexdigest()
 
                 pages.append(MangaChapterPage(
                     pageId=page_id,
                     pageUrl=url,
-                    pageImageUrl=proxied_image_url,
+                    pageImageUrl=proxied_url,
                     pageWidth=width,
                     pageHeight=height,
+                    pageBlurhash=blurhash or "",  # fallback to empty string
                 ))
 
             return pages
+
 
     async def get_image_dimensions(self, client: httpx.AsyncClient, image_url: str) -> tuple[int, int]:
         try:
@@ -264,7 +273,16 @@ class MangakakalotScraper(BaseScraper):
             data = res.json()
             return int(data.get("width", 0)), int(data.get("height", 0))
         except Exception:
-            return 0, 0, None
+            return 0, 0
+
+    async def get_blurhash(self, client: httpx.AsyncClient, endpoint: str, image_url: str) -> str | None:
+        # return ""
+        try:
+            res = await client.get(f"{endpoint}?url={quote(image_url)}", timeout=5)
+            res.raise_for_status()
+            return res.json().get("blurhash")
+        except Exception:
+            return None
 
     def _build_chapters_navigation_map(self, chapters: List[MangaChapter]) -> ChaptersNavigationMap:
         """
