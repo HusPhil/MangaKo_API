@@ -1,5 +1,6 @@
 import asyncio
-import httpx
+import httpx, cloudscraper
+from app.core.config import settings
 from app.core.sources import SUPPORTED_SOURCES
 from .base import BaseScraper
 from app.schemas.manga_schema import (
@@ -36,8 +37,10 @@ DEFAULT_HEADERS = {
     "user-agent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36",
 }
 
+cf = "REDACTED"
+
 cookies = {
-    "cf_clearance": "REDACTED"
+    "cf_clearance": f"{str(settings.COMICK_COOKIE)}"
 }
 
 status_map = {
@@ -54,21 +57,29 @@ BLURHASH_ENDPOINT = "https://REDACTED/api/blurhash"
 
 
 class ComickioScrapper(BaseScraper):
+
     def __init__(self):
+        self.cloudflare_scraper = cloudscraper.create_scraper()
         self.semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
+    async def fetch_with_scraper(self, url: str):
+        loop = asyncio.get_running_loop()
+
+        def fetch():
+            response = self.cloudflare_scraper.get(url)
+            print("Cookies:", response.cookies.get_dict())
+            return response
+
+        return await loop.run_in_executor(None, fetch)
+
     async def scrape(self) -> dict:
+        url = 'https://api.comick.fun/v1.0/comic/genius-corpse-collecting-warrior'
+
         async with httpx.AsyncClient() as client:
-
-            url = 'https://api.comick.fun/v1.0/comic/genius-corpse-collecting-warrior'
-
             response = await client.get(url, headers=DEFAULT_HEADERS, cookies=cookies)
             response.raise_for_status()
-    
 
-            return {'res': "Comick source is working without hiccups!", 'source': SOURCE_NAME}
-
-    #    return {'source': SOURCE_NAME, 'message': 'this is the comick scraper'}
+        return {'res': "Comick source is working without hiccups!", 'source': SOURCE_NAME}
 
     async def scrape_latest_manga(self, url: str):
         async with httpx.AsyncClient() as client:
