@@ -75,7 +75,7 @@ class BaseScraper(ABC):
         try:
             res = await client.get(f"{endpoint}?url={quote(image_url)}", timeout=5)
             res.raise_for_status()
-            return res.json().get("blurhash")
+            return (res.json().get("blurhash"), res.json().get("width"), res.json().get("height"))
         except Exception:
             return None
 

@@ -8,7 +8,6 @@ load_dotenv()
 class Settings(BaseSettings):
     COMICK_COOKIE: str = os.getenv("COMICK_COOKIE")
 
-    # COMICK_COOKIE no longer logged
 
     class Config:
         extra = "allow"

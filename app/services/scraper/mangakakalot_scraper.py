@@ -22,7 +22,7 @@ from app.schemas.manga_schema import (
 
 IMAGE_PROXY_WORKER_URL = "https://mangako-page-image-proxy.REDACTED.workers.dev/"
 IMAGE_METADATA_PROXY_WORKER_URL = "https://mangako-image-metadata-worker.REDACTED.workers.dev/"
-# IMAGE_METADATA_PROXY_WORKER_URL = "https://api.imagekit.io/v1/files/remote/metadata"
+
 DEFAULT_HEADERS = {
     "Referer": "https://www.mangakakalot.gg/",
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36"
@@ -234,13 +234,11 @@ class MangakakalotScraper(BaseScraper):
             
 
             # Fetch all metadata and blurhash concurrently using the proxied URL
-            dimension_tasks = [self.get_image_dimensions(client, image_url) for _, image_url, _ in image_urls]
             blurhash_tasks = [self.get_blurhash(client, BLURHASH_ENDPOINT, proxied_url) for _, _, proxied_url in image_urls]
 
-            dimensions = await asyncio.gather(*dimension_tasks)
             blurhashes = await asyncio.gather(*blurhash_tasks)
 
-            for (index, image_url, proxied_url), (width, height), blurhash in zip(image_urls, dimensions, blurhashes):
+            for (index, image_url, proxied_url), (blurhash, width, height) in zip(image_urls, blurhashes):
                 page_id = hashlib.md5(f"{url}-{index}".encode()).hexdigest()
 
                 pages.append(MangaChapterPage(
@@ -257,13 +255,12 @@ class MangakakalotScraper(BaseScraper):
 
     async def get_image_dimensions(self, client: httpx.AsyncClient, image_url: str) -> tuple[int, int]:
         try:
-            res = await client.get(f"{IMAGE_METADATA_PROXY_WORKER_URL}?url={quote(image_url)}", headers={}, timeout=5)
+            res = await client.get(f"{IMAGE_METADATA_PROXY_WORKER_URL}?url={quote(image_url)}", headers=DEFAULT_HEADERS, timeout=5)
             data = res.json()
             return int(data.get("width", 0)), int(data.get("height", 0))
-        except Exception:
+        except Exception as e:
+            print(e)
             return 0, 0
-
-    
 
     
     

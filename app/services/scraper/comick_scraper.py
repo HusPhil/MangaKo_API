@@ -1,7 +1,6 @@
 import asyncio
 from requests import Response
 import httpx, cloudscraper
-from app.core.config import settings
 from app.core.sources import SUPPORTED_SOURCES
 from .base import BaseScraper
 from app.schemas.manga_schema import (
@@ -42,7 +41,6 @@ DEFAULT_HEADERS = {
 }
 
 cookies = {
-    "cf_clearance": f"{str(settings.COMICK_COOKIE)}"
 }
 
 status_map = {
