@@ -1,13 +1,5 @@
-import hashlib
-import re
-from requests import Response
 import asyncio
-from typing import List
-
-import cloudscraper, asyncio
 import httpx
-from urllib.parse import quote
-from selectolax.parser import HTMLParser
 from app.core.sources import SUPPORTED_SOURCES
 from .base import BaseScraper
 from app.schemas.manga_schema import (
