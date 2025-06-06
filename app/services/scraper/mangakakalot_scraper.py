@@ -20,8 +20,8 @@ from app.schemas.manga_schema import (
     ChapterNavigation
 )
 
-IMAGE_PROXY_WORKER_URL = "https://mangako-page-image-proxy.REDACTED/"
-IMAGE_METADATA_PROXY_WORKER_URL = "https://mangako-image-metadata-worker.REDACTED/"
+IMAGE_PROXY_WORKER_URL = "https://mangako-page-image-proxy.REDACTED.workers.dev/"
+IMAGE_METADATA_PROXY_WORKER_URL = "https://mangako-image-metadata-worker.REDACTED.workers.dev/"
 # IMAGE_METADATA_PROXY_WORKER_URL = "https://api.imagekit.io/v1/files/remote/metadata"
 DEFAULT_HEADERS = {
     "Referer": "https://www.mangakakalot.gg/",
