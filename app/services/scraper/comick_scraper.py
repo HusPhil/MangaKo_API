@@ -1,4 +1,5 @@
 import asyncio
+from requests import Response
 import httpx, cloudscraper
 from app.core.config import settings
 from app.core.sources import SUPPORTED_SOURCES
@@ -37,8 +38,6 @@ DEFAULT_HEADERS = {
     "user-agent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36",
 }
 
-cf = "REDACTED"
-
 cookies = {
     "cf_clearance": f"{str(settings.COMICK_COOKIE)}"
 }
@@ -55,35 +54,28 @@ MAX_CONCURRENT_REQUESTS = 10
 BLURHASH_ENDPOINT = "https://REDACTED/api/blurhash"
 
 
-
 class ComickioScrapper(BaseScraper):
 
     def __init__(self):
         self.cloudflare_scraper = cloudscraper.create_scraper()
         self.semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
-    async def fetch_with_scraper(self, url: str):
+    async def fetch_with_scraper(self, url: str) -> Response:
         loop = asyncio.get_running_loop()
-
-        def fetch():
-            response = self.cloudflare_scraper.get(url)
-            print("Cookies:", response.cookies.get_dict())
-            return response
-
-        return await loop.run_in_executor(None, fetch)
+        return await loop.run_in_executor(None, lambda: self.cloudflare_scraper.get(url))
 
     async def scrape(self) -> dict:
         url = 'https://api.comick.fun/v1.0/comic/genius-corpse-collecting-warrior'
 
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url, headers=DEFAULT_HEADERS, cookies=cookies)
+        async with self.semaphore:
+            response = await self.fetch_with_scraper(url)
             response.raise_for_status()
 
         return {'res': "Comick source is working without hiccups!", 'source': SOURCE_NAME}
 
     async def scrape_latest_manga(self, url: str):
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url, headers=DEFAULT_HEADERS, cookies=cookies)
+        async with self.semaphore:
+            response = await self.fetch_with_scraper(url)
             response.raise_for_status()
             print(f"[DEBUG] Fetched URL: {url}")
 
@@ -101,8 +93,8 @@ class ComickioScrapper(BaseScraper):
             )
 
     async def scrape_popular_manga(self, url: str) -> PopularMangaListResponse:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url, headers=DEFAULT_HEADERS, cookies=cookies)
+        async with self.semaphore:
+            response = await self.fetch_with_scraper(url)
             response.raise_for_status()
 
             popular_manga = [Manga(
@@ -120,9 +112,9 @@ class ComickioScrapper(BaseScraper):
             )
     
     async def scrape_manga_info(self, url: str) -> MangaInfoResponse:
-        async with httpx.AsyncClient() as client:
+        async with self.semaphore:
 
-            response = await client.get(url, headers=DEFAULT_HEADERS, cookies=cookies)
+            response = await self.fetch_with_scraper(url)
             response.raise_for_status()
             # 1/Ongoing 2/Completed 3/Cancelled 4/Hiatus
 
@@ -147,7 +139,7 @@ class ComickioScrapper(BaseScraper):
 
             chapter_url = f"https://api.comick.fun/comic/{manga_hid}/chapters?limit=10000&lang=en"
 
-            response = await client.get(chapter_url, headers=DEFAULT_HEADERS, cookies=cookies)
+            response = await self.fetch_with_scraper(chapter_url)
             response.raise_for_status()
 
             for chapter in response.json()['chapters']:
@@ -169,9 +161,9 @@ class ComickioScrapper(BaseScraper):
             )
 
     async def scrape_manga_search(self, keyword: str) -> MangaSearchResponse:
-        async with httpx.AsyncClient() as client:
+        async with self.semaphore:
             search_url = f"https://api.comick.fun/v1.0/search/?page=1&limit=300&sort=user_follow_count&showall=false&q={self._to_comickio_slug(keyword)}"
-            response = await client.get(search_url, headers=DEFAULT_HEADERS, cookies=cookies)
+            response = await self.fetch_with_scraper(search_url)
             response.raise_for_status()
             results = []
 
@@ -198,8 +190,8 @@ class ComickioScrapper(BaseScraper):
             )
 
     async def scrape_chapter_pages(self, url: str) -> list[MangaChapterPage]:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url, headers=DEFAULT_HEADERS, cookies=cookies)
+        async with self.semaphore:
+            response = await self.fetch_with_scraper(url)
             response.raise_for_status()
             
             pages_data = response.json()
