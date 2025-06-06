@@ -202,7 +202,7 @@ class ComickioScrapper(BaseScraper):
 
             # Fetch blurhashes concurrently
             blurhash_tasks = [
-                self.get_blurhash(client, BLURHASH_ENDPOINT, image_url)
+                self.get_blurhash(self.semaphore, BLURHASH_ENDPOINT, image_url)
                 for image_url in image_urls
             ]
             blurhashes = await asyncio.gather(*blurhash_tasks)
