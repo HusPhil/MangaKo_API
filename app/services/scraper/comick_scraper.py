@@ -72,56 +72,9 @@ class ComickioScrapper(BaseScraper):
 
             response = await client.get(url, headers=DEFAULT_HEADERS, cookies=cookies)
             response.raise_for_status()
-            # 1/Ongoing 2/Completed 3/Cancelled 4/Hiatus
+    
 
-            
-
-            manga_details = MangaDetails(
-                mangaDescription=response.json()['comic']['desc'],
-                mangaAuthor=", ".join(author['name'] for author in response.json().get('authors', [])),
-                mangaStatus=status_map.get(response.json()['comic']['status'], "Unknown"),
-                mangaTags=[
-                    genre['md_genres']['name']
-                    for genre in response.json()['comic'].get('md_comic_md_genres', [])
-                ],
-                mangaAlternativeNames=[
-                    title['title']
-                    for title in response.json()['comic'].get('md_titles', [])
-                    if title['title'] != response.json()['comic']['title']
-                ]
-            )
-
-            manga_chapters = []
-            chapterNavigationMap = self.build_chapters_navigation_map(manga_chapters)
-
-            # manga_details = MangaDetails(
-            #     mangaDescription=response.json()['comic']['desc'],
-            #     mangaAuthor=response.json()['comic'].get('author', ''),
-            #     mangaStatus=response.json()['comic'].get('status', ''),
-            #     mangaTags=response.json()['comic'].get('tags', []),
-            #     mangaAlternativeNames=response.json()['comic'].get('alternative_names', [])
-            # )
-
-            
-
-
-            # MangaInfoResponse (
-            #     chaptersNavigationMap=
-            #     mangaChapters=
-            #     mangaDetails=
-            # )
-
-            print(f"[DEBUG] Fetched URL: {url}")
-
-            # latest_manga = [Manga(
-            #     mangaSource=SUPPORTED_SOURCES[SOURCE_NAME],
-            #     mangaId=str(manga['id']), 
-            #     mangaTitle=manga['title'],
-            #     mangaCover=manga['cover_url'],
-            #     mangaUrl=f"https://comick.io/comic/{manga['slug']}"
-            # ) for manga in response.json()]
-
-            return {'res': manga_details, 'source': SOURCE_NAME}
+            return {'res': "Comick source is working without hiccups!", 'source': SOURCE_NAME}
 
     #    return {'source': SOURCE_NAME, 'message': 'this is the comick scraper'}
 
@@ -214,40 +167,26 @@ class ComickioScrapper(BaseScraper):
 
     async def scrape_manga_search(self, keyword: str) -> MangaSearchResponse:
         async with httpx.AsyncClient() as client:
-            search_url = f"https://comick.io/search?q={self._to_comickio_slug(keyword)}" # ewan ko pa to
-            response = await client.get(search_url, headers=DEFAULT_HEADERS)
-            tree = HTMLParser(response.text)
-            
-            print(tree)
-            print(tree.body.text())
-            print(tree.css_first("title").text())
-            print(tree.css_first("h1"))
+            search_url = f"https://api.comick.fun/v1.0/search/?page=1&limit=300&sort=user_follow_count&showall=false&q={self._to_comickio_slug(keyword)}"
+            response = await client.get(search_url, headers=DEFAULT_HEADERS, cookies=cookies)
+            response.raise_for_status()
+            results = []
 
-            story_items = tree.css(".panel_story_list .story_item")
-            results: list[Manga] = []
-
-            for item in story_items:
-                title_tag = item.css_first("h3.story_name a")
-                img_tag = item.css_first("a img")
-
-                if not title_tag or not img_tag:
-                    continue
-
-                manga_title = title_tag.text(strip=True)
-                manga_url = title_tag.attributes.get("href")
-                original_cover_url = img_tag.attributes.get("src")
-                manga_cover = f"{IMAGE_PROXY_WORKER_URL}?url={quote(original_cover_url)}"
-
-                if not manga_url:
-                    continue
-
-                manga_id = hashlib.md5(manga_url.encode()).hexdigest()
+            for manga in response.json():
+                if (
+                    not manga.get('slug') or
+                    not manga.get('md_covers') or
+                    not isinstance(manga['md_covers'], list) or
+                    not manga['md_covers'][0].get('b2key')
+                ):
+                    continue  # Skip if essential data is missing
 
                 results.append(Manga(
-                    mangaId=manga_id,
-                    mangaTitle=manga_title,
-                    mangaUrl=manga_url,
-                    mangaCover=manga_cover
+                    mangaSource=SUPPORTED_SOURCES[SOURCE_NAME],
+                    mangaId=manga['hid'],
+                    mangaTitle=manga.get('title', 'Unknown Title'),
+                    mangaCover=f"https://meo.comick.pictures/{manga['md_covers'][0]['b2key']}",
+                    mangaUrl=f"https://api.comick.fun/v1.0/comic/{manga['slug']}"
                 ))
 
             return MangaSearchResponse(
