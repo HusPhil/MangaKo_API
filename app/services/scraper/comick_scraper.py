@@ -14,6 +14,9 @@ from app.schemas.manga_schema import (
     MangaSearchResponse
 )
 
+from urllib.parse import quote
+
+
 IMAGE_PROXY_WORKER_URL = "https://mangako-page-image-proxy.REDACTED/"
 IMAGE_METADATA_PROXY_WORKER_URL = "https://mangako-image-metadata-worker.REDACTED/"
 DEFAULT_HEADERS = {
@@ -198,18 +201,17 @@ class ComickioScrapper(BaseScraper):
 
             # Construct full image URLs
             image_urls = [f"https://meo.comick.pictures/{page['b2key']}" for page in pages_data]
-            
-
-            # Fetch blurhashes concurrently
-            blurhash_tasks = [
-                self.get_blurhash(self.semaphore, BLURHASH_ENDPOINT, image_url)
-                for image_url in image_urls
-            ]
-            blurhashes = await asyncio.gather(*blurhash_tasks)
+            async with httpx.AsyncClient() as client:
+            # Fetch blurhashes concurrently with limited concurrency
+                blurhash_tasks = [
+                    self.get_blurhash(client, BLURHASH_ENDPOINT, image_url)
+                    for image_url in image_urls
+                ]
+                blurhashes = await asyncio.gather(*blurhash_tasks)
 
             # Construct MangaChapterPage list
             pages = []
-            for index, (page_data, image_url, blurhash) in enumerate(zip(pages_data, image_urls, blurhashes)):
+            for page_data, image_url, blurhash in zip(pages_data, image_urls, blurhashes):
                 pages.append(MangaChapterPage(
                     pageId=page_data['b2key'],
                     pageUrl=url,
@@ -220,7 +222,17 @@ class ComickioScrapper(BaseScraper):
                 ))
 
             return pages
-        
+    
+    async def get_blurhash(self, client: httpx.AsyncClient, endpoint: str, image_url: str) -> str | None:
+        print('[DEBUG] OVERRIDEN Fetching blurhash for image URL:', image_url)
+        try:
+            async with self.semaphore:
+                res = await client.get(f"{endpoint}?url={quote(image_url)}", timeout=5)
+                res.raise_for_status()
+                return res.json().get("blurhash")
+        except Exception:
+            return None
+
     def _to_comickio_slug(self, query: str) -> str:
         """
         Convert a search query to ComickIO's expected slug format.
