@@ -151,6 +151,11 @@ class ComickioScrapper(BaseScraper):
                     chapterUrl=f"https://api.comick.fun/chapter/{chapter['hid']}/get_images",  # Replace with your actual URL format
                     chapterTimeUploaded=chapter['updated_at']
                 )
+                
+                if len(manga_chapters) == 0:
+                    manga_chapters.append(res_chapter)
+                    continue
+
                 if manga_chapters[-1].chapterTitle != res_chapter.chapterTitle:
                     manga_chapters.append(res_chapter)
 
