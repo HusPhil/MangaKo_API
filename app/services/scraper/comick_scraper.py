@@ -136,7 +136,7 @@ class ComickioScrapper(BaseScraper):
                 ]
             )
             manga_hid = response.json()['comic']['hid']
-            manga_chapters = []
+            manga_chapters: list[MangaChapter] = []
 
             chapter_url = f"https://api.comick.fun/comic/{manga_hid}/chapters?limit=10000&lang=en"
 
@@ -151,7 +151,8 @@ class ComickioScrapper(BaseScraper):
                     chapterUrl=f"https://api.comick.fun/chapter/{chapter['hid']}/get_images",  # Replace with your actual URL format
                     chapterTimeUploaded=chapter['updated_at']
                 )
-                manga_chapters.append(res_chapter)
+                if manga_chapters[-1].chapterTitle != res_chapter.chapterTitle:
+                    manga_chapters.append(res_chapter)
 
             chapterNavigationMap = self._build_chapters_navigation_map(manga_chapters)
 
