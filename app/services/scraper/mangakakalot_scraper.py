@@ -188,11 +188,15 @@ class MangakakalotScraper(BaseScraper):
                 raw_api_url = element.attributes.get("data-api-url")
                 comic_slug = element.attributes.get("data-comic-slug")
                 url_template = element.attributes.get("data-chapter-url-template")
+                query_params = {
+                    "limit": 100000,
+                    "offset": 0
+                }
 
                 final_api_url = raw_api_url.replace("__SLUG__", comic_slug)
                 print(f"Fetching Chapters API: {final_api_url}")
 
-                resp = await client.get(final_api_url, headers=DEFAULT_HEADERS)
+                resp = await client.get(final_api_url, headers=DEFAULT_HEADERS, params=query_params)
                 
                 data = resp.json()
                 
