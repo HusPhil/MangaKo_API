@@ -232,9 +232,6 @@ class MangakakalotScraper(BaseScraper):
             response = await client.get(url, headers=DEFAULT_HEADERS)
             tree = HTMLParser(response.text)
 
-            with open("mangakakalot.html", "w", encoding="utf-8") as f:
-                f.write(response.text)
-
             container = tree.css_first('.container-chapter-reader')
             if not container:
                 return []
