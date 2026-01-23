@@ -4,17 +4,40 @@ from app.core.sources import SUPPORTED_SOURCES
 from app.services.scraper.factory import get_scraper
 from app.schemas.sources_schema import Source
 from typing import List
-import hashlib
+import hashlib, httpx, json
 
 router = APIRouter()
 
 @router.get("/")
-def test_scrape():
-    supported_sources = list(SUPPORTED_SOURCES.keys())
-    print(supported_sources)
+async def test_scrape():
+    # supported_sources = list(SUPPORTED_SOURCES.keys())
+    # print(supported_sources)
 
-    return {'message': 'scrape route working!', 'supported_sources': supported_sources}
+    acc_id = 'REDACTED'
+    api_key = 'REDACTED'
 
+    # return {'message': 'scrape route working!', 'supported_sources': supported_sources}
+    base_url = 'https://api.cloudflare.com/client/v4/accounts/' + acc_id + '/browser-rendering/content'
+    headers = {
+         'Authorization': f'Bearer {api_key}',
+         'Content-Type': 'application/json'
+    }
+
+    payload = {
+        "url": "https://fto.to/apo/"
+    }
+
+    async with httpx.AsyncClient() as client:
+            resp = await client.post(base_url, headers=headers, data=json.dumps(payload))
+            print(resp.json())
+            return {
+                'message': 'scrape route working!',
+                'response': resp.json()
+            }
+    return {
+                'message': 'scrape route working!',
+            }
+    pass
 
 @router.get("/sources")
 def get_supported_sources() -> List[Source]:

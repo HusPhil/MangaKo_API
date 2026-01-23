@@ -40,9 +40,10 @@ class MangakakalotScraper(BaseScraper):
             response = await client.get(url, headers=DEFAULT_HEADERS)
             tree = HTMLParser(response.text)
 
+
             latest_manga: List[Manga] = []
 
-            for item in tree.css("div.list-truyen-item-wrap"):
+            for item in tree.css("div.list-comic-item-wrap"):
                 a_tag = item.css_first("a[data-id]")
                 if not a_tag:
                     continue
@@ -179,25 +180,45 @@ class MangakakalotScraper(BaseScraper):
                 mangaAlternativeNames=manga_alternative_names,
             )
 
-            chapter_nodes = html.css('.chapter-list .row')
-            chapters = []
-            for row in chapter_nodes:
-                link_node = row.css_first('a')
-                time_node = row.css('span')[-1]
+            chapter_container_nodes = html.css('div#chapter-list-container')
 
-                if link_node and time_node:
-                    chapter_title = link_node.text(strip=True)
-                    chapter_url = link_node.attributes.get("href", "")
-                    chapter_id = hashlib.md5(chapter_url.encode()).hexdigest()
-                    chapter_time = time_node.text(strip=True)
+            if chapter_container_nodes:
+                element = chapter_container_nodes[0]
+                
+                raw_api_url = element.attributes.get("data-api-url")
+                comic_slug = element.attributes.get("data-comic-slug")
+                url_template = element.attributes.get("data-chapter-url-template")
 
-                    chapters.append(MangaChapter(
-                        chapterId=chapter_id,
-                        chapterTitle=chapter_title,
-                        chapterUrl=chapter_url,
-                        chapterTimeUploaded=chapter_time
-                    ))
-            
+                final_api_url = raw_api_url.replace("__SLUG__", comic_slug)
+                print(f"Fetching Chapters API: {final_api_url}")
+
+                resp = await client.get(final_api_url, headers=DEFAULT_HEADERS)
+                
+                data = resp.json()
+                
+                chapters = []
+                
+                if data.get("success") and "data" in data:
+                    chapter_list = data["data"].get("chapters", [])
+
+                    for item in chapter_list:
+                        chapter_name = item.get("chapter_name")  # e.g. "Chapter 33"
+                        chapter_slug = item.get("chapter_slug")  # e.g. "chapter-33"
+                        chapter_time = item.get("updated_at")
+
+                        chapter_url = url_template.replace("__MANGA__", comic_slug).replace("__CHAPTER__", chapter_slug)
+
+                        # Generate ID
+                        chapter_id = hashlib.md5(chapter_url.encode()).hexdigest()
+
+                        chapters.append(MangaChapter(
+                            chapterId=chapter_id,
+                            chapterTitle=chapter_name,
+                            chapterUrl=chapter_url,
+                            chapterTimeUploaded=chapter_time
+                        ))
+
+            # Build navigation map
             chapters_navigation_map = self._build_chapters_navigation_map(chapters)
 
             return MangaInfoResponse(
@@ -210,6 +231,9 @@ class MangakakalotScraper(BaseScraper):
         async with httpx.AsyncClient() as client:
             response = await client.get(url, headers=DEFAULT_HEADERS)
             tree = HTMLParser(response.text)
+
+            with open("mangakakalot.html", "w", encoding="utf-8") as f:
+                f.write(response.text)
 
             container = tree.css_first('.container-chapter-reader')
             if not container:
