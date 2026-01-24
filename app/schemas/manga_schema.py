@@ -2,6 +2,7 @@ from pydantic import BaseModel, RootModel
 from typing import List, Optional, Dict
 from app.schemas.sources_schema import Source
 
+
 class Manga(BaseModel):
     mangaSource: Source
     mangaId: str
@@ -9,18 +10,23 @@ class Manga(BaseModel):
     mangaUrl: str
     mangaCover: str
 
+
 class LatestMangaListResponse(BaseModel):
     source: str
     latest_manga: List[Manga]
+    next_url: Optional[str]
 
 
 class PopularMangaListResponse(BaseModel):
     sourceName: str
     popular_manga: List[Manga]
+    next_url: Optional[str]
+
 
 class MangaSearchResponse(BaseModel):
     source: str
     results: List[Manga]
+
 
 class MangaDetails(BaseModel):
     mangaDescription: str
@@ -29,11 +35,13 @@ class MangaDetails(BaseModel):
     mangaTags: List[str]
     mangaAlternativeNames: List[str]
 
+
 class MangaChapter(BaseModel):
     chapterId: str
     chapterTitle: str
-    chapterUrl:str
+    chapterUrl: str
     chapterTimeUploaded: str
+
 
 class MangaChapterPage(BaseModel):
     pageId: str
@@ -43,17 +51,17 @@ class MangaChapterPage(BaseModel):
     pageHeight: int
     pageBlurhash: str
 
+
 class ChapterNavigation(BaseModel):
     prev: Optional[MangaChapter]
     next: Optional[MangaChapter]
 
+
 class ChaptersNavigationMap(RootModel[Dict[str, ChapterNavigation]]):
     pass
+
 
 class MangaInfoResponse(BaseModel):
     mangaChapters: list[MangaChapter]
     mangaDetails: MangaDetails
     chaptersNavigationMap: ChaptersNavigationMap
-
-
-

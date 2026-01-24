@@ -6,24 +6,18 @@ SUPPORTED_SOURCES: dict[str, Source] = {
         sourceId="mangakakalot",
         sourceName="MangaKakalot",
         sourceUrl="https://mangakakalot.com",
-        sourceStatus=SourceStatus.READY_TO_USE
+        sourceStatus=SourceStatus.DEPRECATED,
     ),
     "manganelo": Source(
         sourceId="manganelo",
         sourceName="MangaNelo",
         sourceUrl="https://manganelo.com",
-        sourceStatus=SourceStatus.DEPRECATED
-    ),
-    "asurascans": Source(
-        sourceId="asurascans",
-        sourceName="Asura Scans",
-        sourceUrl="https://asurascans.com",
-        sourceStatus=SourceStatus.IN_DEVELOPMENT
+        sourceStatus=SourceStatus.DEPRECATED,
     ),
     "comick": Source(
         sourceId="comick",
         sourceName="Comick",
-        sourceUrl="https://comick.io/",
-        sourceStatus=SourceStatus.READY_TO_USE
+        sourceUrl="https://comick.live/",
+        sourceStatus=SourceStatus.READY_TO_USE,
     ),
 }

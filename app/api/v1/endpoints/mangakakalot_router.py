@@ -1,12 +1,19 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from app.core.sources import SUPPORTED_SOURCES
 from app.services.scraper.factory import get_scraper
-from app.schemas.manga_schema import LatestMangaListResponse, MangaInfoResponse, PopularMangaListResponse, MangaChapterPage, MangaSearchResponse
+from app.schemas.manga_schema import (
+    LatestMangaListResponse,
+    MangaInfoResponse,
+    PopularMangaListResponse,
+    MangaChapterPage,
+    MangaSearchResponse,
+)
 
 # from app.services.scraper import scrape_website
 # from app.core.security import oauth2_scheme
 router = APIRouter()
-source = 'mangakakalot'
+source = "mangakakalot"
+
 
 @router.get("/")
 async def test_mangakakalot():
@@ -16,25 +23,28 @@ async def test_mangakakalot():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @router.get("/manga/latest/{page}")
 async def get_latest_manga(page: int) -> LatestMangaListResponse:
-    url = f'https://www.mangakakalot.gg/manga-list/latest-manga?page={page}'
+    url = f"https://www.mangahere.cc/latest/{page}"
     try:
         scraper = get_scraper(source)
-        latest_manga = await scraper.scrape_latest_manga(url) 
+        latest_manga = await scraper.scrape_latest_manga(url)
         return latest_manga
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
+
 @router.get("/manga/popular")
 async def get_popular_manga() -> PopularMangaListResponse:
-    url = f'https://www.mangakakalot.gg'
+    url = f"https://www.mangakakalot.gg"
     try:
         scraper = get_scraper(source)
-        popular_manga = await scraper.scrape_popular_manga(url) 
+        popular_manga = await scraper.scrape_popular_manga(url)
         return popular_manga
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/manga/info")
 async def get_manga_info(url: str) -> MangaInfoResponse:
@@ -45,6 +55,7 @@ async def get_manga_info(url: str) -> MangaInfoResponse:
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @router.get("/manga/chapter/pages", response_model=list[MangaChapterPage])
 async def get_chapter_pages(url: str = Query(..., description="Full chapter URL")):
     try:
@@ -52,7 +63,8 @@ async def get_chapter_pages(url: str = Query(..., description="Full chapter URL"
         return await scraper.scrape_chapter_pages(url)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
+
 @router.get("/manga/search", response_model=MangaSearchResponse)
 async def search_manga(keyword: str = Query(..., description="Search query")):
     try:
