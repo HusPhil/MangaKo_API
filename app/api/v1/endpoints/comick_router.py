@@ -27,11 +27,6 @@ async def sync_cookie(request: Request):
     # The WebView browser attaches the cookies automatically
     cookies = request.headers.get("cookie")
 
-    print("\n" + "=" * 50)
-    print("🚀 COOKIE RECEIVED FROM IOS:")
-    print(cookies)
-    print("=" * 50 + "\n")
-
     if cookies and "cf_clearance" in cookies:
         # Success! You now have the clearance cookie in your backend.
         return {"status": "success", "msg": "Cookie captured!"}
@@ -63,7 +58,6 @@ async def get_popular_manga() -> PopularMangaListResponse:
 
 @router.get("/manga/info")
 async def get_manga_info(url: str) -> MangaInfoResponse:
-    print("This even working:", url)
     try:
         scraper = get_scraper(source)
         manga_info = await scraper.scrape_manga_info(url)

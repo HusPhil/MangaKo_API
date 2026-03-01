@@ -26,7 +26,7 @@ async def test_mangakakalot():
 
 @router.get("/manga/latest/{page}")
 async def get_latest_manga(page: int) -> LatestMangaListResponse:
-    url = f"https://www.mangahere.cc/directory/?latest={page}"
+    url = f"https://mangabuddy.com/latest?page={page}"
     try:
         scraper = get_scraper(source)
         latest_manga = await scraper.scrape_latest_manga(url)
@@ -37,7 +37,7 @@ async def get_latest_manga(page: int) -> LatestMangaListResponse:
 
 @router.get("/manga/popular")
 async def get_popular_manga() -> PopularMangaListResponse:
-    url = f"https://www.mangakakalot.gg"
+    url = f"https://mangabuddy.com/popular?page=1"
     try:
         scraper = get_scraper(source)
         popular_manga = await scraper.scrape_popular_manga(url)

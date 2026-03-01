@@ -5,7 +5,7 @@ SUPPORTED_SOURCES: dict[str, Source] = {
     "mangakakalot": Source(
         sourceId="mangakakalot",
         sourceName="MangaKakalot",
-        sourceUrl="https://mangakakalot.com",
+        sourceUrl="https://mangabuddy.com",
         sourceStatus=SourceStatus.DEPRECATED,
     ),
     "manganelo": Source(
