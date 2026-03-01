@@ -1,6 +1,6 @@
 from app.schemas.sources_schema import SourceStatus, Source
 
-
+# to be changed or add new source for managabuddy
 SUPPORTED_SOURCES: dict[str, Source] = {
     "mangakakalot": Source(
         sourceId="mangakakalot",
