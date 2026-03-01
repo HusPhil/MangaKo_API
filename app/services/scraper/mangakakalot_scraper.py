@@ -3,6 +3,7 @@ import re
 import asyncio
 from typing import List
 
+from curl_cffi import AsyncSession
 import httpx
 from urllib.parse import quote
 from selectolax.parser import HTMLParser
@@ -21,10 +22,8 @@ from app.schemas.manga_schema import (
     ChapterNavigation,
 )
 
-IMAGE_PROXY_WORKER_URL = "https://mangako-page-image-proxy.REDACTED.workers.dev/"
-IMAGE_METADATA_PROXY_WORKER_URL = (
-    "https://mangako-image-metadata-worker.REDACTED.workers.dev/"
-)
+IMAGE_PROXY_WORKER_URL = "https://mangabuddy-image-proxy.REDACTED.workers.dev/"
+DIMENSION_WORKER_URL = "https://mangabuddy-image-dimension.REDACTED.workers.dev/"
 
 DEFAULT_HEADERS = {
     "Referer": "https://mangahere.cc/manga/one_piece/v98/c1071/2.html",
@@ -36,6 +35,9 @@ BLURHASH_ENDPOINT = "https://REDACTED/api/blurhash"
 
 
 class MangakakalotScraper(BaseScraper):
+    def __init__(self):
+        self.AsyncClient = AsyncSession(impersonate="chrome", headers=DEFAULT_HEADERS)
+
     async def scrape(self) -> dict:
         from urllib.parse import quote
 
@@ -70,60 +72,65 @@ class MangakakalotScraper(BaseScraper):
 
         async with httpx.AsyncClient() as client:
             try:
-                print(f"☁️ Cloudflare Browser fetching: {target_url}")
                 # Increase timeout because rendering JS takes time
                 response = await client.post(url=url, json=payload, headers=headers)
 
                 # Check for errors
                 if response.status_code != 200:
-                    print(f"❌ Error {response.status_code}: {response.text}")
                     return ""
 
                 # The API returns the raw HTML directly in the body
                 return response.json()
 
             except Exception as e:
-                print(f"❌ Connection Error: {e}")
                 return ""
 
         # return {"source": SOURCE_NAME, "message": "this is the mangakakalot scraper"}
 
     async def scrape_latest_manga(self, url: str) -> LatestMangaListResponse:
-        async with httpx.AsyncClient() as client:
+        async with self.AsyncClient as client:
             response = await client.get(
-                "https://zjcdn.mangahere.org/store/manga/106/98-1071.0/compressed/j001.jpg",
+                url,
                 headers=DEFAULT_HEADERS,
             )
 
-            image_data = response.content
-
-            # Save the image
-            with open("manga_page_v3.jpg", "wb") as f:
-                f.write(image_data)
-
+            # 1. Parse the HTML tree
             tree = HTMLParser(response.text)
 
             latest_manga: List[Manga] = []
 
-            for item in tree.css("div.list-comic-item-wrap"):
-                a_tag = item.css_first("a[data-id]")
-                if not a_tag:
+            # 2. Update selector: The provided HTML uses 'div.manga-list-1 ul.manga-list-1-list li'
+            for item in tree.css("div.manga-list-1 ul.manga-list-1-list li"):
+                # The title and link are inside a paragraph with class 'manga-list-1-item-title'
+                title_tag = item.css_first("p.manga-list-1-item-title a")
+                img_tag = item.css_first("img.manga-list-1-cover")
+
+                if not title_tag or not img_tag:
                     continue
 
-                manga_url = a_tag.attributes.get("href")
-                manga_title = a_tag.attributes.get("title")
-                img_tag = a_tag.css_first("img")
+                manga_url = title_tag.attributes.get("href")
+                manga_title = title_tag.attributes.get("title")
 
-                if not manga_url or not manga_title or not img_tag:
-                    continue
+                # 3. Handle relative URLs if necessary
+                if manga_url and manga_url.startswith("/"):
+                    # You might want to prepend the base domain here if your app requires absolute URLs
+                    # manga_url = f"https://www.mangahere.cc{manga_url}"
+                    pass
 
-                original_cover_url = img_tag.attributes.get(
-                    "data-src"
-                ) or img_tag.attributes.get("src")
+                # 4. Get cover image (MangaHere uses 'src' for these covers)
+                original_cover_url = img_tag.attributes.get("src")
+
+                # Handle potential protocol-relative URLs (e.g., //static...)
+                if original_cover_url and original_cover_url.startswith("//"):
+                    original_cover_url = f"https:{original_cover_url}"
+
                 manga_cover = (
                     f"{IMAGE_PROXY_WORKER_URL}?url={quote(original_cover_url)}"
+                    if original_cover_url
+                    else ""
                 )
 
+                # 5. Generate ID
                 manga_id = hashlib.md5(manga_url.encode()).hexdigest()
 
                 latest_manga.append(
@@ -136,12 +143,19 @@ class MangakakalotScraper(BaseScraper):
                     )
                 )
 
+            # 6. Extract "Next Page" URL from the pager
+            # Pager structure: <div class="pager-list-left"> ... <a href="/directory/2.htm?latest=1">&gt;</a>
+            next_tag = tree.css_first("div.pager-list-left a:last-child")
+            next_url = None
+            if next_tag and next_tag.text() == ">":
+                next_url = next_tag.attributes.get("href")
+
             return LatestMangaListResponse(
-                source=SOURCE_NAME, latest_manga=latest_manga
+                source=SOURCE_NAME, latest_manga=latest_manga, next_url=next_url
             )
 
     async def scrape_popular_manga(self, url: str) -> PopularMangaListResponse:
-        async with httpx.AsyncClient() as client:
+        async with self.AsyncClient as client:
             response = await client.get(url, headers=DEFAULT_HEADERS)
             tree = HTMLParser(response.text)
 
@@ -182,30 +196,51 @@ class MangakakalotScraper(BaseScraper):
 
     async def scrape_manga_search(self, keyword: str) -> MangaSearchResponse:
         async with httpx.AsyncClient() as client:
-            search_url = f"https://www.mangakakalot.gg/search/story/{self._to_mangakakalot_slug(keyword)}"
+            search_url = (
+                f"https://mangabuddy.com/search?q={self._to_mangakakalot_slug(keyword)}"
+            )
             response = await client.get(search_url, headers=DEFAULT_HEADERS)
+
             tree = HTMLParser(response.text)
 
-            story_items = tree.css(".panel_story_list .story_item")
+            # MangaBuddy uses .book-item for its grid list
+            story_items = tree.css(".list.manga-list .book-item .book-detailed-item")
             results: list[Manga] = []
 
             for item in story_items:
-                title_tag = item.css_first("h3.story_name a")
-                img_tag = item.css_first("a img")
+                thumb_link_tag = item.css_first(".thumb a")
+                title_tag = item.css_first(".meta .title h3 a")
+                img_tag = item.css_first(".thumb img")
 
-                if not title_tag or not img_tag:
+                if not thumb_link_tag or not title_tag or not img_tag:
                     continue
 
-                manga_title = title_tag.text(strip=True)
-                manga_url = title_tag.attributes.get("href")
-                original_cover_url = img_tag.attributes.get("src")
+                # The title inside the <a> tag contains HTML spans for highlights.
+                # We use the title attribute from the thumb link for a clean string.
+                manga_title = thumb_link_tag.attributes.get("title") or title_tag.text(
+                    strip=True
+                )
+
+                raw_url = thumb_link_tag.attributes.get("href")
+
+                # Convert relative paths to absolute URLs
+                manga_url = (
+                    f"https://mangabuddy.com{raw_url}"
+                    if raw_url.startswith("/")
+                    else raw_url
+                )
+
+                # MangaBuddy uses lazy loading, so the actual cover is in 'data-src'
+                original_cover_url = img_tag.attributes.get(
+                    "data-src"
+                ) or img_tag.attributes.get("src")
+
+                if not manga_url or not original_cover_url:
+                    continue
+
                 manga_cover = (
                     f"{IMAGE_PROXY_WORKER_URL}?url={quote(original_cover_url)}"
                 )
-
-                if not manga_url:
-                    continue
-
                 manga_id = hashlib.md5(manga_url.encode()).hexdigest()
 
                 results.append(
@@ -225,31 +260,50 @@ class MangakakalotScraper(BaseScraper):
             resp = await client.get(url, headers=DEFAULT_HEADERS)
             html = HTMLParser(resp.text)
 
-            desc_node = html.css_first("#contentBox")
-            raw_description = desc_node.text(strip=True) if desc_node else ""
-            manga_description = re.sub(r"\s+", " ", raw_description).strip()
-
-            author_node = html.css_first(
-                '.comic-info-section .info-wrap a[href*="/author/"]'
+            # Extract Description
+            desc_tag = html.css_first(".summary .content")
+            manga_description = (
+                desc_tag.text(strip=True) if desc_tag else "No description available."
             )
-            manga_author = author_node.text(strip=True) if author_node else ""
 
-            status_node = html.css_first(
-                ".comic-info-section .info-wrap div:nth-of-type(2) p:nth-of-type(2)"
-            )
-            manga_status = status_node.text(strip=True) if status_node else ""
+            # Extract Alternative Names
+            alt_names_tag = html.css_first(".detail .name h2")
+            if alt_names_tag:
+                manga_alternative_names = [
+                    name.strip()
+                    for name in alt_names_tag.text().split(",")
+                    if name.strip()
+                ]
+            else:
+                manga_alternative_names = []
 
-            genre_nodes = html.css(".genre-list a")
-            manga_tags = [node.text(strip=True) for node in genre_nodes]
+            manga_author = "Unknown"
+            manga_status = "Unknown"
+            manga_tags = []
 
-            alt_node = html.css_first("h2.story-alternative")
-            raw_alt_text = alt_node.text(strip=True) if alt_node else ""
-            cleaned_alt_text = re.sub(r"^Alternative\s*:\s*", "", raw_alt_text)
-            manga_alternative_names = [
-                alt.strip()
-                for alt in re.split(r"[;,]", cleaned_alt_text)
-                if alt.strip()
-            ]
+            # Extract Meta details (Author, Status, Genres)
+            meta_paragraphs = html.css(".detail .meta.box p")
+            for p in meta_paragraphs:
+                strong_tag = p.css_first("strong")
+                if not strong_tag:
+                    continue
+
+                label = strong_tag.text(strip=True).lower()
+
+                if "authors" in label:
+                    authors = [
+                        a.text(strip=True).replace(",", "").strip() for a in p.css("a")
+                    ]
+                    manga_author = ", ".join(authors) if authors else "Unknown"
+                elif "status" in label:
+                    status_tag = p.css_first("a")
+                    manga_status = (
+                        status_tag.text(strip=True) if status_tag else "Unknown"
+                    )
+                elif "genres" in label:
+                    manga_tags = [
+                        a.text(strip=True).replace(",", "").strip() for a in p.css("a")
+                    ]
 
             details = MangaDetails(
                 mangaDescription=manga_description,
@@ -259,50 +313,39 @@ class MangakakalotScraper(BaseScraper):
                 mangaAlternativeNames=manga_alternative_names,
             )
 
-            chapter_container_nodes = html.css("div#chapter-list-container")
+            chapters: list[MangaChapter] = []
+            chapter_items = html.css("#chapter-list li a")
 
-            if chapter_container_nodes:
-                element = chapter_container_nodes[0]
+            # Extract Chapters
+            for item in chapter_items:
+                raw_url = item.attributes.get("href")
+                if not raw_url:
+                    continue
 
-                raw_api_url = element.attributes.get("data-api-url")
-                comic_slug = element.attributes.get("data-comic-slug")
-                url_template = element.attributes.get("data-chapter-url-template")
-                query_params = {"limit": 100000, "offset": 0}
+                # Convert relative paths to absolute URLs
+                chapter_url = (
+                    f"https://mangabuddy.com{raw_url}"
+                    if raw_url.startswith("/")
+                    else raw_url
+                )
+                chapter_id = hashlib.md5(chapter_url.encode()).hexdigest()
 
-                final_api_url = raw_api_url.replace("__SLUG__", comic_slug)
-                print(f"Fetching Chapters API: {final_api_url}")
-
-                resp = await client.get(
-                    final_api_url, headers=DEFAULT_HEADERS, params=query_params
+                title_tag = item.css_first(".chapter-title")
+                chapter_name = (
+                    title_tag.text(strip=True) if title_tag else "Unknown Chapter"
                 )
 
-                data = resp.json()
+                time_tag = item.css_first(".chapter-update")
+                chapter_time = time_tag.text(strip=True) if time_tag else "Unknown Time"
 
-                chapters = []
-
-                if data.get("success") and "data" in data:
-                    chapter_list = data["data"].get("chapters", [])
-
-                    for item in chapter_list:
-                        chapter_name = item.get("chapter_name")  # e.g. "Chapter 33"
-                        chapter_slug = item.get("chapter_slug")  # e.g. "chapter-33"
-                        chapter_time = item.get("updated_at")
-
-                        chapter_url = url_template.replace(
-                            "__MANGA__", comic_slug
-                        ).replace("__CHAPTER__", chapter_slug)
-
-                        # Generate ID
-                        chapter_id = hashlib.md5(chapter_url.encode()).hexdigest()
-
-                        chapters.append(
-                            MangaChapter(
-                                chapterId=chapter_id,
-                                chapterTitle=chapter_name,
-                                chapterUrl=chapter_url,
-                                chapterTimeUploaded=chapter_time,
-                            )
-                        )
+                chapters.append(
+                    MangaChapter(
+                        chapterId=chapter_id,
+                        chapterTitle=chapter_name,
+                        chapterUrl=chapter_url,
+                        chapterTimeUploaded=chapter_time,
+                    )
+                )
 
             # Build navigation map
             chapters_navigation_map = self._build_chapters_navigation_map(chapters)
@@ -316,53 +359,85 @@ class MangakakalotScraper(BaseScraper):
     async def scrape_chapter_pages(self, url: str) -> list[MangaChapterPage]:
         async with httpx.AsyncClient() as client:
             response = await client.get(url, headers=DEFAULT_HEADERS)
-            tree = HTMLParser(response.text)
 
-            container = tree.css_first(".container-chapter-reader")
-            if not container:
-                return []
-
-            image_nodes = container.css("img")
+            # 1. Extract the chapImages string using regex
+            match = re.search(r"var\s+chapImages\s*=\s*'(.*?)'", response.text)
             pages: list[MangaChapterPage] = []
 
-            image_urls = []
-            for index, img in enumerate(image_nodes):
-                src = img.attributes.get("src")
-                onerror = img.attributes.get("onerror")
-                fallback_src = (
-                    re.search(r"this\.src='(.*?)'", onerror).group(1)
-                    if onerror
-                    else None
-                )
-                image_url = src or fallback_src
-                if not image_url:
-                    continue
+            if not match:
+                return pages
 
-                # Proxify the URL now and save it
-                proxied_url = f"{IMAGE_PROXY_WORKER_URL}?url={quote(image_url)}"
-                image_urls.append((index, image_url, proxied_url))
+            raw_images_str = match.group(1)
 
-            # Fetch all metadata and blurhash concurrently using the proxied URL
-            blurhash_tasks = [
-                self.get_blurhash(client, BLURHASH_ENDPOINT, proxied_url)
-                for _, _, proxied_url in image_urls
+            # 2. Clean and split into a list of URLs
+            image_urls = [
+                img.strip() for img in raw_images_str.split(",") if img.strip()
             ]
 
-            blurhashes = await asyncio.gather(*blurhash_tasks)
+            if not image_urls:
+                return pages
 
-            for (index, image_url, proxied_url), (blurhash, width, height) in zip(
-                image_urls, blurhashes
-            ):
-                page_id = hashlib.md5(f"{url}-{index}".encode()).hexdigest()
+            # --- DIMENSION WORKER LOGIC ---
+
+            # 3. Batch URLs (Max 40 per batch to stay safely under Cloudflare's 50 limit)
+            batch_size = 40
+            url_batches = [
+                image_urls[i : i + batch_size]
+                for i in range(0, len(image_urls), batch_size)
+            ]
+
+            dimension_map = (
+                {}
+            )  # Dictionary to store { "url": {"width": w, "height": h} }
+
+            # Helper function to request dimensions for a single batch
+            async def fetch_dimensions_batch(batch: list[str]):
+                try:
+                    worker_resp = await client.post(
+                        DIMENSION_WORKER_URL,
+                        json={"urls": batch},
+                        timeout=15.0,  # Give the worker time to fetch the headers
+                    )
+
+                    worker_resp.raise_for_status()
+                    return worker_resp.json()
+                except Exception as e:
+                    return []
+
+            # 4. Run all batch requests concurrently
+            batch_results = await asyncio.gather(
+                *(fetch_dimensions_batch(b) for b in url_batches)
+            )
+
+            # 5. Flatten the results and map them by URL for easy lookup
+            for batch_result in batch_results:
+                for item in batch_result:
+                    dimension_map[item.get("url")] = {
+                        "width": item.get("width", 0),
+                        "height": item.get("height", 0),
+                    }
+
+            # ------------------------------
+
+            # 6. Iterate through the original URLs and build the response schema
+            for img_url in image_urls:
+                # Generate a unique ID based on the original URL
+                page_id = hashlib.md5(img_url.encode()).hexdigest()
+
+                # Append proxy URL
+                proxied_url = f"{IMAGE_PROXY_WORKER_URL}?url={quote(img_url)}"
+
+                # Lookup dimensions (fallback to 0 if the worker failed for this specific image)
+                dims = dimension_map.get(img_url, {"width": 0, "height": 0})
 
                 pages.append(
                     MangaChapterPage(
                         pageId=page_id,
                         pageUrl=url,
                         pageImageUrl=proxied_url,
-                        pageWidth=width,
-                        pageHeight=height,
-                        pageBlurhash=blurhash or "",  # fallback to empty string
+                        pageWidth=dims["width"],
+                        pageHeight=dims["height"],
+                        pageBlurhash="",
                     )
                 )
 
@@ -394,5 +469,5 @@ class MangakakalotScraper(BaseScraper):
 
         query = query.strip().lower()
         query = re.sub(r"[^\w\s]", "", query)  # Remove special characters
-        query = re.sub(r"\s+", "_", query)  # Replace spaces with underscores
+        query = re.sub(r"\s+", "+", query)  # Replace spaces with underscores
         return query

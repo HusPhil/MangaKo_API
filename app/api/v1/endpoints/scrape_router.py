@@ -8,36 +8,31 @@ import hashlib, httpx, json
 
 router = APIRouter()
 
+
 @router.get("/")
 async def test_scrape():
-    # supported_sources = list(SUPPORTED_SOURCES.keys())
-    # print(supported_sources)
 
-    acc_id = 'REDACTED'
-    api_key = 'REDACTED'
+    acc_id = "REDACTED"
+    api_key = "REDACTED"
 
     # return {'message': 'scrape route working!', 'supported_sources': supported_sources}
-    base_url = 'https://api.cloudflare.com/client/v4/accounts/' + acc_id + '/browser-rendering/content'
-    headers = {
-         'Authorization': f'Bearer {api_key}',
-         'Content-Type': 'application/json'
-    }
+    base_url = (
+        "https://api.cloudflare.com/client/v4/accounts/"
+        + acc_id
+        + "/browser-rendering/content"
+    )
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
-    payload = {
-        "url": "https://fto.to/apo/"
-    }
+    payload = {"url": "https://fto.to/apo/"}
 
     async with httpx.AsyncClient() as client:
-            resp = await client.post(base_url, headers=headers, data=json.dumps(payload))
-            print(resp.json())
-            return {
-                'message': 'scrape route working!',
-                'response': resp.json()
-            }
+        resp = await client.post(base_url, headers=headers, data=json.dumps(payload))
+        return {"message": "scrape route working!", "response": resp.json()}
     return {
-                'message': 'scrape route working!',
-            }
+        "message": "scrape route working!",
+    }
     pass
+
 
 @router.get("/sources")
 def get_supported_sources() -> List[Source]:

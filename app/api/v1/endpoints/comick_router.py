@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Header, Query, Request
 from app.core.sources import SUPPORTED_SOURCES
 from app.services.scraper.factory import get_scraper
 from app.schemas.manga_schema import (
@@ -20,6 +20,23 @@ async def test_comickio():
         return await scraper.scrape()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/sync_cookie")
+async def sync_cookie(request: Request):
+    # The WebView browser attaches the cookies automatically
+    cookies = request.headers.get("cookie")
+
+    print("\n" + "=" * 50)
+    print("🚀 COOKIE RECEIVED FROM IOS:")
+    print(cookies)
+    print("=" * 50 + "\n")
+
+    if cookies and "cf_clearance" in cookies:
+        # Success! You now have the clearance cookie in your backend.
+        return {"status": "success", "msg": "Cookie captured!"}
+
+    return {"status": "error", "msg": "cf_clearance not found in headers"}
 
 
 @router.get("/manga/latest/{page}")
@@ -65,9 +82,11 @@ async def get_chapter_pages(url: str = Query(..., description="Full chapter URL"
 
 
 @router.get("/manga/search", response_model=MangaSearchResponse)
-async def search_manga(keyword: str = Query(..., description="Search query")):
+async def search_manga(
+    keyword: str = Query(..., description="Search query"), cookie: str = Header(None)
+):
     try:
         scraper = get_scraper(source)
-        return await scraper.scrape_manga_search(keyword)
+        return await scraper.scrape_manga_search(keyword, cookie=cookie)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

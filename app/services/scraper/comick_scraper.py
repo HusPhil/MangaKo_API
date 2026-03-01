@@ -22,25 +22,18 @@ IMAGE_METADATA_PROXY_WORKER_URL = (
     "https://mangako-image-metadata-worker.REDACTED.workers.dev/"
 )
 DEFAULT_HEADERS = {
-    "accept": "application/json",
-    "accept-encoding": "gzip, deflate, br, zstd",
-    "accept-language": "en-US,en;q=0.9",
-    "priority": "u=1, i",
-    "sec-ch-ua": '"Google Chrome";v="137", "Chromium";v="137", "Not/A)Brand";v="24"',
-    "sec-ch-ua-arch": '""',
-    "sec-ch-ua-bitness": "64",
-    "sec-ch-ua-full-version": "137.0.7151.56",
-    "sec-ch-ua-full-version-list": (
-        '"Google Chrome";v="137.0.7151.56", "Chromium";v="137.0.7151.56", "Not/A)Brand";v="24.0.0.0"'
-    ),
-    "sec-ch-ua-mobile": "?1",
-    "sec-ch-ua-model": "Nexus 5",
-    "sec-ch-ua-platform": "Android",
-    "sec-ch-ua-platform-version": "6.0",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
+    "Accept": "*/*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://comick.live/",
+    "sec-ch-ua": '"Google Chrome";v="143", "Chromium";v="143", "Not A(Brand";v="24"',
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": '"Windows"',
     "sec-fetch-dest": "empty",
     "sec-fetch-mode": "cors",
     "sec-fetch-site": "same-origin",
-    "user-agent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36",
+    "Priority": "u=1, i",
+    "Cookie": "REDACTED",
 }
 
 cookies = {}
@@ -55,16 +48,9 @@ BLURHASH_ENDPOINT = "https://REDACTED/api/blurhash"
 class ComickioScrapper(BaseScraper):
 
     def __init__(self):
-        self.AsyncClient = AsyncSession(
-            impersonate="chrome_android", headers=DEFAULT_HEADERS, cookies=cookies
-        )
+        self.AsyncClient = AsyncSession(impersonate="chrome", headers=DEFAULT_HEADERS)
 
     async def scrape(self) -> dict:
-        url = "https://api.comick.fun/v1.0/comic/genius-corpse-collecting-warrior"
-
-        async with self.AsyncClient:
-            response = await self.fetch_with_scraper(url)
-            response.raise_for_status()
 
         return {
             "res": "Comick source is working without hiccups!",
@@ -208,33 +194,140 @@ class ComickioScrapper(BaseScraper):
                 chaptersNavigationMap=chapterNavigationMap,
             )
 
-    async def scrape_manga_search(self, keyword: str) -> MangaSearchResponse:
-        async with self.AsyncClient:
-            search_url = f"https://api.comick.fun/v1.0/search/?page=1&limit=300&sort=user_follow_count&showall=false&q={self._to_comickio_slug(keyword)}"
-            response = await self.fetch_with_scraper(search_url)
+    async def scrape_manga_search(
+        self, keyword: str, cookie: str = None
+    ) -> MangaSearchResponse:
+        async with self.AsyncClient as client:
+            # Note: Using the .dev API which is generally more permissive
+            search_url = (
+                f"https://comick.live/api/search?q={self._to_comickio_slug(keyword)}"
+            )
+            search_url = f"https://comick.live/api/search?q=one&__cf_chl_tk=REDACTED"
+
+            # We keep the header structure, but the cookie is now optional/None
+            headers = {**DEFAULT_HEADERS}
+            if cookie:
+                headers["Cookie"] = cookie
+
+            response = await client.get(search_url, headers=headers)
             response.raise_for_status()
+
+            # The new API returns the list directly or inside a data key
+            search_results = response.json()
+
+            # Based on your provided schema, it's a list of objects
             results = []
 
-            for manga in response.json():
-                if (
-                    not manga.get("slug")
-                    or not manga.get("md_covers")
-                    or not isinstance(manga["md_covers"], list)
-                    or not manga["md_covers"][0].get("b2key")
-                ):
-                    continue  # Skip if essential data is missing
+            for manga in search_results:
+                if not manga:
+                    continue
 
-                results.append(
-                    Manga(
-                        mangaSource=SUPPORTED_SOURCES[SOURCE_NAME],
-                        mangaId=manga["hid"],
-                        mangaTitle=manga.get("title", "Unknown Title"),
-                        mangaCover=f"https://meo.comick.pictures/{manga['md_covers'][0]['b2key']}",
-                        mangaUrl=f"https://api.comick.fun/v1.0/comic/{manga['slug']}",
+                # --- Field Extraction ---
+                m_id = manga.get("id")
+                m_hid = manga.get("hid")  # New field from this API
+                m_slug = manga.get("slug")
+                m_title = manga.get("title", "Unknown Title")
+
+                # This API uses 'md_covers' array for images
+                # We try to get the first cover b2key
+                covers = manga.get("md_covers", [])
+                m_thumb = ""
+                if covers:
+                    # Comick image CDN usually follows this pattern
+                    b2key = covers[0].get("b2key", "")
+                    m_thumb = f"https://meo.comick.pictures/{b2key}"
+
+                # --- CRITICAL CHANGE ---
+                # The .dev search API does NOT provide the 'chapter_latest_by_langs'
+                # To provide a valid MangaUrl, we link to the comic info page instead
+                # or you can use a placeholder if your app requires a chapter URL.
+                if not all([m_id, m_slug, m_hid]):
+                    continue
+
+                try:
+                    results.append(
+                        Manga(
+                            mangaSource=SUPPORTED_SOURCES[SOURCE_NAME],
+                            mangaId=str(m_id),
+                            mangaTitle=m_title,
+                            mangaCover=(f"{m_thumb}" if m_thumb else ""),
+                            # Since search doesn't provide chapters, we point to the manga detail page
+                            mangaUrl=f"https://comick.live/api/comics/{m_slug}/{m_hid}-chapter-1-en",
+                        )
                     )
-                )
+                except Exception as e:
+                    print(f"Error processing manga {m_id}: {e}")
+                    continue
 
             return MangaSearchResponse(source=SOURCE_NAME, results=results)
+
+    # async def scrape_manga_search(
+    #     self, keyword: str, cookie: str
+    # ) -> MangaSearchResponse:
+    #     async with self.AsyncClient as client:
+    #         search_url = f"https://api.comick.dev/v1.0/search?&limit=49&page=1&content_rating=safe&content_rating=suggestive&q={self._to_comickio_slug(keyword)}"
+
+    #         response = await client.get(
+    #             search_url, headers={**DEFAULT_HEADERS, "Cookie": cookie}
+    #         )
+
+    #         print(response.json())
+
+    #         response.raise_for_status()
+    #         # print(SUPPORTED_SOURCES[SOURCE_NAME])
+    #         # print(str(manga["id"]))
+    #         # print(manga.get("title", "Unknown Title"))
+    #         # print(f"{IMAGE_PROXY_WORKER_URL}?url={manga['default_thumbnail']}")
+    #         # print(
+    #         #     f"https://comick.live/api/comics/{manga['slug']}/{manga['chapter_latest_by_langs']['en']['hid']}-chapter-{manga['chapter_latest_by_langs']['en']['chapter_number_slug']}-en"
+    #         # )
+
+    #         manga_search_data = response.json()["data"]
+
+    #         results = []
+
+    #         for manga in manga_search_data:
+    #             # 1. Handle case where manga entry itself might be None
+    #             if not manga:
+    #                 continue
+
+    #             # 2. Extract nested data safely
+    #             latest_chapters = manga.get("chapter_latest_by_langs") or {}
+    #             en_chapter = (
+    #                 latest_chapters.get("en") or {}
+    #             )  # Default to empty dict instead of None
+
+    #             # 3. Gather all required fields
+    #             m_id = manga.get("id")
+    #             m_slug = manga.get("slug")
+    #             m_title = manga.get("title", "Unknown Title")
+    #             m_thumb = manga.get("default_thumbnail", "")
+
+    #             # These are the sub-keys inside the 'en' dictionary
+    #             c_hid = en_chapter.get("hid")
+    #             c_num = en_chapter.get("chapter_number_slug")
+
+    #             # 4. CRITICAL VERIFICATION: Skip if ANY essential info is None or Empty
+    #             # This prevents the "NoneType" and "KeyError" issues entirely.
+    #             if not all([m_id, m_slug, c_hid, c_num]):
+    #                 continue
+
+    #             try:
+    #                 results.append(
+    #                     Manga(
+    #                         mangaSource=SUPPORTED_SOURCES[SOURCE_NAME],
+    #                         mangaId=str(m_id),
+    #                         mangaTitle=m_title,
+    #                         mangaCover=f"{IMAGE_PROXY_WORKER_URL}?url={m_thumb}",
+    #                         # All variables below are now guaranteed to be non-None strings
+    #                         mangaUrl=f"https://comick.live/api/comics/{m_slug}/{c_hid}-chapter-{c_num}-en",
+    #                     )
+    #                 )
+    #             except Exception as e:
+    #                 print(f"Unexpected error processing manga {m_id}: {e}")
+    #                 continue
+
+    #         return MangaSearchResponse(source=SOURCE_NAME, results=results)
 
     async def scrape_chapter_pages(self, url: str) -> list[MangaChapterPage]:
         async with self.AsyncClient as client:
