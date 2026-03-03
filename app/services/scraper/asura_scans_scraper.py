@@ -183,9 +183,6 @@ class AsuraScansScraper(BaseScraper):
             response = await client.get(search_url)
             response.raise_for_status()
 
-            with open("test_files/test.html", "w", encoding="utf-8") as f:
-                f.write(response.text)
-
             # 1. Parse the HTML tree instead of JSON
             tree = HTMLParser(response.text)
             results = []
