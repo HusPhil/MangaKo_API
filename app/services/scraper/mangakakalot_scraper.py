@@ -39,53 +39,33 @@ class MangakakalotScraper(BaseScraper):
         self.AsyncClient = AsyncSession(impersonate="chrome", headers=DEFAULT_HEADERS)
 
     async def scrape(self) -> dict:
-        from urllib.parse import quote
-
-        account_id = "REDACTED"
-        api_token = "REDACTED"
-        target_url = (
-            "https://comick.live/api/comics/the-great-mage-returns-after-4/chapter-list"
-        )
-        selectors = ["div"]
-        wait_until = "networkidle"
-
-        endpoint = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/browser-rendering/content"
-
-        headers = {
-            "Authorization": f"Bearer {api_token}",
-            "Content-Type": "application/json",
-        }
-
-        # Construct Payload
-        payload = {
-            "url": target_url,
-            # "gotoOptions" controls how long the browser waits before returning
-            "gotoOptions": {"waitUntil": wait_until},
-        }
-
-        url = "https://comick-source-api.notaspider.dev/api/search"
-        payload = {"query": "Solo Leveling", "source": "mangapark"}
-        headers = {
-            "Content-Type": "application/json",
-            "User-Agent": "Python-Requests/2.x",  # optional, but good practice
-        }
-
         async with httpx.AsyncClient() as client:
-            try:
-                # Increase timeout because rendering JS takes time
-                response = await client.post(url=url, json=payload, headers=headers)
+            resp = await client.get(
+                "https://mangabuddy.com/one-punch-man/chapter-224",
+                headers=DEFAULT_HEADERS,
+            )
+            html = HTMLParser(resp.text)
 
-                # Check for errors
-                if response.status_code != 200:
-                    return ""
+            match = re.search(r"var bookId\s*=\s*(\d+);", resp.text)
 
-                # The API returns the raw HTML directly in the body
-                return response.json()
+            print(match)
 
-            except Exception as e:
-                return ""
+            if match:
+                book_id = match.group(1)
+                print(f"Found bookId: {book_id}")
 
-        # return {"source": SOURCE_NAME, "message": "this is the mangakakalot scraper"}
+                resp = await client.get(
+                    f"https://mangabuddy.com/api/manga/{book_id}/chapters?source=detail",
+                    headers=DEFAULT_HEADERS,
+                )
+                with open(
+                    "test_files/mangabuddy_test.html", "w", encoding="utf-8"
+                ) as f:
+                    f.write(resp.text)
+
+            # print(chapters_resp.text)
+
+        return {"source": SOURCE_NAME, "message": "this is the mangakakalot scraper"}
 
     async def scrape_latest_manga(self, url: str) -> LatestMangaListResponse:
         async with httpx.AsyncClient() as client:
@@ -302,16 +282,16 @@ class MangakakalotScraper(BaseScraper):
 
     async def scrape_manga_info(self, url: str) -> MangaInfoResponse:
         async with httpx.AsyncClient() as client:
+            # 1. Fetch main page HTML
             resp = await client.get(url, headers=DEFAULT_HEADERS)
             html = HTMLParser(resp.text)
 
-            # Extract Description
+            # --- Extract Manga Details ---
             desc_tag = html.css_first(".summary .content")
             manga_description = (
                 desc_tag.text(strip=True) if desc_tag else "No description available."
             )
 
-            # Extract Alternative Names
             alt_names_tag = html.css_first(".detail .name h2")
             if alt_names_tag:
                 manga_alternative_names = [
@@ -326,7 +306,6 @@ class MangakakalotScraper(BaseScraper):
             manga_status = "Unknown"
             manga_tags = []
 
-            # Extract Meta details (Author, Status, Genres)
             meta_paragraphs = html.css(".detail .meta.box p")
             for p in meta_paragraphs:
                 strong_tag = p.css_first("strong")
@@ -358,39 +337,58 @@ class MangakakalotScraper(BaseScraper):
                 mangaAlternativeNames=manga_alternative_names,
             )
 
+            # --- Extract Chapters via API ---
             chapters: list[MangaChapter] = []
-            chapter_items = html.css("#chapter-list li a")
 
-            # Extract Chapters
-            for item in chapter_items:
-                raw_url = item.attributes.get("href")
-                if not raw_url:
-                    continue
+            # Use regex to find bookId
+            match = re.search(r"var\s+bookId\s*=\s*(\d+)", resp.text)
 
-                # Convert relative paths to absolute URLs
-                chapter_url = (
-                    f"https://mangabuddy.com{raw_url}"
-                    if raw_url.startswith("/")
-                    else raw_url
-                )
-                chapter_id = hashlib.md5(chapter_url.encode()).hexdigest()
+            if match:
+                book_id = match.group(1)
 
-                title_tag = item.css_first(".chapter-title")
-                chapter_name = (
-                    title_tag.text(strip=True) if title_tag else "Unknown Chapter"
+                # Fetch the chapters HTML payload
+                chapters_resp = await client.get(
+                    f"https://mangabuddy.com/api/manga/{book_id}/chapters?source=detail",
+                    headers=DEFAULT_HEADERS,
                 )
 
-                time_tag = item.css_first(".chapter-update")
-                chapter_time = time_tag.text(strip=True) if time_tag else "Unknown Time"
+                # Parse the returned HTML chunk
+                chapters_html = HTMLParser(chapters_resp.text)
 
-                chapters.append(
-                    MangaChapter(
-                        chapterId=chapter_id,
-                        chapterTitle=chapter_name,
-                        chapterUrl=chapter_url,
-                        chapterTimeUploaded=chapter_time,
+                # The API returns the <ul id="chapter-list"> directly
+                chapter_items = chapters_html.css("li a")
+
+                for item in chapter_items:
+                    raw_url = item.attributes.get("href")
+                    if not raw_url:
+                        continue
+
+                    # Convert relative paths to absolute URLs
+                    chapter_url = (
+                        f"https://mangabuddy.com{raw_url}"
+                        if raw_url.startswith("/")
+                        else raw_url
                     )
-                )
+                    chapter_id = hashlib.md5(chapter_url.encode()).hexdigest()
+
+                    title_tag = item.css_first(".chapter-title")
+                    chapter_name = (
+                        title_tag.text(strip=True) if title_tag else "Unknown Chapter"
+                    )
+
+                    time_tag = item.css_first(".chapter-update")
+                    chapter_time = (
+                        time_tag.text(strip=True) if time_tag else "Unknown Time"
+                    )
+
+                    chapters.append(
+                        MangaChapter(
+                            chapterId=chapter_id,
+                            chapterTitle=chapter_name,
+                            chapterUrl=chapter_url,
+                            chapterTimeUploaded=chapter_time,
+                        )
+                    )
 
             # Build navigation map
             chapters_navigation_map = self._build_chapters_navigation_map(chapters)
