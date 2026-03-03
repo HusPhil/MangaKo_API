@@ -20,4 +20,10 @@ SUPPORTED_SOURCES: dict[str, Source] = {
         sourceUrl="https://comick.live/",
         sourceStatus=SourceStatus.READY_TO_USE,
     ),
+    "asura scans": Source(
+        sourceId="asura_scans",
+        sourceName="Asura Scans",
+        sourceUrl="https://asurascanz.com/",
+        sourceStatus=SourceStatus.READY_TO_USE,
+    ),
 }
