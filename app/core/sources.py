@@ -20,4 +20,10 @@ SUPPORTED_SOURCES: dict[str, Source] = {
         sourceUrl="https://asurascanz.com/",
         sourceStatus=SourceStatus.READY_TO_USE,
     ),
+    "manhuato": Source(
+        sourceId="manhuato",
+        sourceName="Manhuato",
+        sourceUrl="http://manhuato.com/",
+        sourceStatus=SourceStatus.READY_TO_USE,
+    ),
 }

@@ -25,15 +25,15 @@ from app.schemas.manga_schema import (
 DIMENSION_WORKER_URL = "https://mangabuddy-image-dimension.REDACTED.workers.dev/"
 
 DEFAULT_HEADERS = {
-    "Referer": "https://asurascanz.com/",
+    "Referer": "https://manhuato.com/",
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36",
 }
 
-SOURCE_NAME = "asura scans"
+SOURCE_NAME = "manhuato"
 BLURHASH_ENDPOINT = "https://REDACTED/api/blurhash"
 
 
-class AsuraScansScraper(BaseScraper):
+class ManhuatoScraper(BaseScraper):
     def __init__(self):
         self.AsyncClient = AsyncSession(impersonate="chrome", headers=DEFAULT_HEADERS)
 
@@ -41,15 +41,15 @@ class AsuraScansScraper(BaseScraper):
 
         async with self.AsyncClient as client:
             # Standard search query parameter for WordPress-based sites like Asura Scans
-            url = f"https://asurascanz.com/manga/?page=2&status=&type=&order=latest"
+            url = f"https://manhuato.com/best-manga"
 
             response = await client.get(url)
             response.raise_for_status()
 
-            with open("test_files/test.html", "w", encoding="utf-8") as f:
+            with open("test_files/manhuato.html", "w", encoding="utf-8") as f:
                 f.write(response.text)
 
-        return {"source": SOURCE_NAME, "message": "this is the asura scans scraper"}
+        return {"source": SOURCE_NAME, "message": "this is the manhuato scraper"}
 
     async def scrape_latest_manga(self, url: str) -> LatestMangaListResponse:
         async with self.AsyncClient as client:
@@ -59,28 +59,37 @@ class AsuraScansScraper(BaseScraper):
             tree = HTMLParser(response.text)
             latest_manga: List[Manga] = []
 
-            # 1. Select the items using the MangaReader grid layout classes
-            for item in tree.css(".listupd .bsx a"):
-                manga_url = item.attributes.get("href")
-                manga_title = item.attributes.get("title")
-                img_tag = item.css_first("img")
+            # 1. Target the list items inside the main container
+            for item in tree.css(".list_wrap ul li"):
+                # Extract Title and URL from the .visual .manga-cover link
+                link_tag = item.css_first(".visual .manga-cover a")
+                img_tag = item.css_first(".visual .manga-cover img")
 
-                if not manga_url or not manga_title or not img_tag:
+                if not link_tag or not img_tag:
+                    continue
+
+                manga_title = img_tag.attributes.get("alt", "").strip()
+                raw_url = link_tag.attributes.get("href")
+
+                if not raw_url:
                     continue
 
                 # Ensure the URL is absolute
                 manga_url = (
-                    f"https://asurascanz.com{manga_url}"
-                    if manga_url.startswith("/")
-                    else manga_url
+                    f"https://manhuato.com{raw_url}"
+                    if raw_url.startswith("/")
+                    else raw_url
                 )
 
-                original_cover_url = img_tag.attributes.get("src")
-                if not original_cover_url:
+                # Handle cover image with lazy-loading fallback
+                manga_cover = img_tag.attributes.get(
+                    "data-original"
+                ) or img_tag.attributes.get("src")
+
+                if not manga_cover:
                     continue
 
-                manga_cover = original_cover_url
-
+                # Generate deterministic ID
                 manga_id = hashlib.md5(manga_url.encode()).hexdigest()
 
                 latest_manga.append(
@@ -95,17 +104,14 @@ class AsuraScansScraper(BaseScraper):
 
             # 2. Extract "Next Page" URL from the pagination element
             next_url = None
-            next_tag = tree.css_first(".hpage a.r")
+            # Targeting the link with the right arrow icon
+            next_tag = tree.css_first(".pagination li a[aria-label='Next']")
 
             if next_tag:
                 raw_next = next_tag.attributes.get("href")
                 if raw_next:
-                    if raw_next.startswith("?"):
-                        # Extract the base URL without existing query parameters
-                        base_url = url.split("?")[0]
-                        next_url = f"{base_url}{raw_next}"
-                    elif raw_next.startswith("/"):
-                        next_url = f"https://asurascanz.com{raw_next}"
+                    if raw_next.startswith("/"):
+                        next_url = f"https://manhuato.com{raw_next}"
                     else:
                         next_url = raw_next
 
@@ -115,34 +121,45 @@ class AsuraScansScraper(BaseScraper):
 
     async def scrape_popular_manga(self, url: str) -> PopularMangaListResponse:
         async with self.AsyncClient as client:
+            # 1. Fetch the HTML
             response = await client.get(url, headers=DEFAULT_HEADERS)
             response.raise_for_status()
 
             tree = HTMLParser(response.text)
             popular_manga: List[Manga] = []
 
-            # 1. Select the items using the MangaReader grid layout classes
-            for item in tree.css(".listupd .bsx a"):
-                manga_url = item.attributes.get("href")
-                manga_title = item.attributes.get("title")
-                img_tag = item.css_first("img")
+            # 2. Select items using the ManhuaTo list structure
+            # Items are inside .list_wrap > ul > li
+            for item in tree.css(".list_wrap ul li"):
+                link_tag = item.css_first(".visual .manga-cover a")
+                img_tag = item.css_first(".visual .manga-cover img")
 
-                if not manga_url or not manga_title or not img_tag:
+                if not link_tag or not img_tag:
+                    continue
+
+                # Extract Title from img alt and URL from the link
+                manga_title = img_tag.attributes.get("alt", "").strip()
+                raw_url = link_tag.attributes.get("href")
+
+                if not raw_url:
                     continue
 
                 # Ensure the URL is absolute
                 manga_url = (
-                    f"https://asurascanz.com{manga_url}"
-                    if manga_url.startswith("/")
-                    else manga_url
+                    f"https://manhuato.com{raw_url}"
+                    if raw_url.startswith("/")
+                    else raw_url
                 )
 
-                original_cover_url = img_tag.attributes.get("src")
-                if not original_cover_url:
+                # Handle cover image: use data-original for the actual high-quality thumbnail
+                manga_cover = img_tag.attributes.get(
+                    "data-original"
+                ) or img_tag.attributes.get("src")
+
+                if not manga_cover:
                     continue
 
-                manga_cover = original_cover_url
-
+                # Generate deterministic ID
                 manga_id = hashlib.md5(manga_url.encode()).hexdigest()
 
                 popular_manga.append(
@@ -155,19 +172,15 @@ class AsuraScansScraper(BaseScraper):
                     )
                 )
 
-            # 2. Extract "Next Page" URL from the pagination element
+            # 3. Extract "Next Page" URL from the pagination element
             next_url = None
-            next_tag = tree.css_first(".hpage a.r")
+            next_tag = tree.css_first(".pagination li a[aria-label='Next']")
 
             if next_tag:
                 raw_next = next_tag.attributes.get("href")
                 if raw_next:
-                    if raw_next.startswith("?"):
-                        # Extract the base URL without existing query parameters
-                        base_url = url.split("?")[0]
-                        next_url = f"{base_url}{raw_next}"
-                    elif raw_next.startswith("/"):
-                        next_url = f"https://asurascanz.com{raw_next}"
+                    if raw_next.startswith("/"):
+                        next_url = f"https://manhuato.com{raw_next}"
                     else:
                         next_url = raw_next
 
@@ -177,40 +190,47 @@ class AsuraScansScraper(BaseScraper):
 
     async def scrape_manga_search(self, keyword: str) -> MangaSearchResponse:
         async with self.AsyncClient as client:
-            # Standard search query parameter for WordPress-based sites like Asura Scans
-            search_url = f"https://asurascanz.com/?s={quote(keyword)}"
+            # ManhuaTo standard search URL structure
+            # Note: ManhuaTo uses spaces in the URL for search keywords based on the HTML metadata
+            search_url = f"https://manhuato.com/{quote(keyword)}"
 
-            response = await client.get(search_url)
+            response = await client.get(search_url, headers=DEFAULT_HEADERS)
             response.raise_for_status()
 
-            # 1. Parse the HTML tree instead of JSON
             tree = HTMLParser(response.text)
             results = []
 
-            # 2. Extract Manga entries from the grid layout
-            # Asura Scans search results wrap the manga card in an <a> tag inside .bsx
-            for item in tree.css(".listupd .bsx a"):
-                manga_url = item.attributes.get("href")
-                manga_title = item.attributes.get("title")
-                img_tag = item.css_first("img")
+            # Target the list items inside the main results container
+            # The provided HTML structure: .section_todayup > .list_wrap > ul > li
+            for item in tree.css(".list_wrap ul li"):
+                # 1. Extract Title and URL from the .main_text h3 link
+                title_tag = item.css_first(".main_text h3.title a")
+                # 2. Extract Image from the .visual .manga-cover container
+                img_tag = item.css_first(".visual .manga-cover img")
 
-                # Validate extracted fields
-                if not manga_url or not manga_title or not img_tag:
+                if not title_tag or not img_tag:
                     continue
 
-                original_cover_url = img_tag.attributes.get("src")
-                if not original_cover_url:
-                    continue
+                manga_title = title_tag.text(strip=True)
+                raw_url = title_tag.attributes.get("href")
 
-                # Proxy the image URL as per previous structure
-                manga_cover = original_cover_url
-
-                # Generate deterministic ID
-                manga_id = hashlib.md5(manga_url.encode()).hexdigest()
-
-                print(
-                    f"ID: {manga_id}, Title: {manga_title}, URL: {manga_url}, Cover: {manga_cover}"
+                # 3. Normalize absolute URL
+                manga_url = (
+                    f"https://manhuato.com{raw_url}"
+                    if raw_url.startswith("/")
+                    else raw_url
                 )
+
+                # 4. Handle cover image (prefer data-original for lazy-loaded images)
+                manga_cover = img_tag.attributes.get(
+                    "data-original"
+                ) or img_tag.attributes.get("src")
+
+                if not manga_cover:
+                    continue
+
+                # 5. Generate deterministic ID
+                manga_id = hashlib.md5(manga_url.encode()).hexdigest()
 
                 results.append(
                     Manga(
@@ -221,8 +241,6 @@ class AsuraScansScraper(BaseScraper):
                         mangaCover=manga_cover,
                     )
                 )
-
-            print(results)
 
             return MangaSearchResponse(source=SOURCE_NAME, results=results)
 
@@ -237,28 +255,45 @@ class AsuraScansScraper(BaseScraper):
             tree = HTMLParser(response.text)
 
             # 2. Extract Manga Details
-            # Description is usually contained within a <p> tag inside the .entry-content div
-            desc_tag = tree.css_first(".entry-content[itemprop='description'] p")
+            # Description is inside .desc tags (there are two, the first usually contains the synopsis)
+            desc_tag = tree.css_first(".desc")
             manga_description = (
                 desc_tag.text(strip=True) if desc_tag else "No description available."
             )
 
-            # Extract Tags/Genres
-            manga_tags = [a.text(strip=True) for a in tree.css(".mgen a")]
-
-            # Extract Status from the info box
-            manga_status = "Unknown"
-            for item in tree.css(".tsinfo .imptdt"):
-                if "Status" in item.text():
-                    status_tag = item.css_first("i")
-                    if status_tag:
-                        manga_status = status_tag.text(strip=True)
-                    break
-
-            # Asura Scans often does not display alternative names or author prominently in this view
-            # We default them to match the schema constraints
+            # Alternative names are in the h2 class "alternative"
+            alt_names_tag = tree.css_first("h2.alternative")
             manga_alternative_names = []
+            if alt_names_tag:
+                # Splits by comma and cleans whitespace
+                manga_alternative_names = [
+                    name.strip() for name in alt_names_tag.text().split(",")
+                ]
+
+            # Extract Tags/Genres from the .hentai-info section
+            manga_tags = []
+            for tag in tree.css(".hentai-info .item-tag"):
+                # Filtering out tags that might be authors or artists by checking the parent text
+                parent_text = (
+                    tag.parent.parent.text() if tag.parent and tag.parent.parent else ""
+                )
+                if "Genres" in parent_text:
+                    manga_tags.append(tag.text(strip=True))
+
+            # Extract Author and Status
             manga_author = "Unknown"
+            manga_status = "Ongoing"
+
+            for line in tree.css(".hentai-info .line"):
+                line_text = line.text()
+                if "Authors:" in line_text:
+                    author_tag = line.css_first(".item-tag")
+                    if author_tag:
+                        manga_author = author_tag.text(strip=True)
+                elif "Status:" in line_text:
+                    status_content = line.css_first(".line-content")
+                    if status_content:
+                        manga_status = status_content.text(strip=True)
 
             details = MangaDetails(
                 mangaDescription=manga_description,
@@ -270,10 +305,9 @@ class AsuraScansScraper(BaseScraper):
 
             # 3. Extract Chapters
             chapters: List[MangaChapter] = []
-            chapter_items = tree.css("#chapterlist ul li")
-
-            for item in chapter_items:
-                link_tag = item.css_first(".eph-num a")
+            # Chapters are in <li class="citem"> inside <ul id="chapter-list">
+            for item in tree.css("#chapter-list li.citem"):
+                link_tag = item.css_first("a")
                 if not link_tag:
                     continue
 
@@ -281,23 +315,16 @@ class AsuraScansScraper(BaseScraper):
                 if not raw_url:
                     continue
 
-                # Ensure URL is absolute (Asura Scans usually provides absolute URLs by default)
                 chapter_url = (
-                    f"https://asurascanz.com{raw_url}"
+                    f"https://manhuato.com{raw_url}"
                     if raw_url.startswith("/")
                     else raw_url
                 )
 
                 chapter_id = hashlib.md5(chapter_url.encode()).hexdigest()
+                chapter_name = link_tag.text(strip=True)
 
-                title_tag = item.css_first(".chapternum")
-                chapter_name = (
-                    title_tag.text(strip=True).replace("\n", " ")
-                    if title_tag
-                    else "Unknown Chapter"
-                )
-
-                time_tag = item.css_first(".chapterdate")
+                time_tag = item.css_first(".time")
                 chapter_time = time_tag.text(strip=True) if time_tag else "Unknown Time"
 
                 chapters.append(
@@ -332,12 +359,11 @@ class AsuraScansScraper(BaseScraper):
             pages: list[MangaChapterPage] = []
             raw_urls = []
 
-            # Asura Scans stores chapter images inside the #readerarea container
-            for img_tag in tree.css("#readerarea img"):
-                # Prioritize data-src for lazy-loaded images, falling back to src
-                img_url = img_tag.attributes.get("data-src") or img_tag.attributes.get(
-                    "src"
-                )
+            # ManhuaTo stores chapter images inside .item-photo div containers
+            # within the .chapter-content section
+            for img_tag in tree.css(".chapter-content .item-photo img"):
+                # Extract the image URL from the 'src' attribute
+                img_url = img_tag.attributes.get("src")
 
                 if img_url:
                     img_url = img_url.strip()
@@ -348,9 +374,6 @@ class AsuraScansScraper(BaseScraper):
 
             if not raw_urls:
                 return pages
-
-            # Note: The MangaBuddy-specific stable CDN transformation (mbcdns -> mbbcdn)
-            # has been removed here because Asura Scans images are hosted differently.
 
             # 3. Fetch dimensions via Cloudflare Worker using Chunking
             dimensions_map = {}
@@ -385,7 +408,6 @@ class AsuraScansScraper(BaseScraper):
             # 4. Iterate through the URLs and build the response schema
             for img_url in raw_urls:
                 page_id = hashlib.md5(img_url.encode()).hexdigest()
-                proxied_url = img_url
 
                 # Retrieve dimensions from the map
                 dim_info = dimensions_map.get(img_url, {})
@@ -396,7 +418,7 @@ class AsuraScansScraper(BaseScraper):
                     MangaChapterPage(
                         pageId=page_id,
                         pageUrl=url,
-                        pageImageUrl=proxied_url,
+                        pageImageUrl=img_url,
                         pageWidth=width,
                         pageHeight=height,
                         pageBlurhash="",

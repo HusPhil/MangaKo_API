@@ -4,6 +4,7 @@ from app.api.v1.endpoints import (
     auth_router,
     comick_router,
     image_router,
+    manhuato_router,
     scrape_router,
     mangakakalot_router,
 )
@@ -17,6 +18,9 @@ router.include_router(comick_router.router, prefix="/comick", tags=["Comick"])
 router.include_router(
     asura_scans_router.router, prefix="/asura_scans", tags=["Asura Scans"]
 )
+
+router.include_router(manhuato_router.router, prefix="/manhuato", tags=["Manhuato"])
+
 router.include_router(
     image_router.router, prefix="/image_service", tags=["Image Service"]
 )

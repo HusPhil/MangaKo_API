@@ -41,27 +41,12 @@ class MangakakalotScraper(BaseScraper):
     async def scrape(self) -> dict:
         async with httpx.AsyncClient() as client:
             resp = await client.get(
-                "https://mangabuddy.com/one-punch-man/chapter-224",
+                "https://manhuato.com/manhua/magic-emperor/magic-emperor-chapter-576-ch341494",
                 headers=DEFAULT_HEADERS,
             )
-            html = HTMLParser(resp.text)
 
-            match = re.search(r"var bookId\s*=\s*(\d+);", resp.text)
-
-            print(match)
-
-            if match:
-                book_id = match.group(1)
-                print(f"Found bookId: {book_id}")
-
-                resp = await client.get(
-                    f"https://mangabuddy.com/api/manga/{book_id}/chapters?source=detail",
-                    headers=DEFAULT_HEADERS,
-                )
-                with open(
-                    "test_files/mangabuddy_test.html", "w", encoding="utf-8"
-                ) as f:
-                    f.write(resp.text)
+            with open("test_files/manhuato.html", "w", encoding="utf-8") as f:
+                f.write(resp.text)
 
             # print(chapters_resp.text)
 
