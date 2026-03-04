@@ -26,4 +26,10 @@ SUPPORTED_SOURCES: dict[str, Source] = {
         sourceUrl="http://manhuato.com/",
         sourceStatus=SourceStatus.READY_TO_USE,
     ),
+    "mangafox": Source(
+        sourceId="mangafox",
+        sourceName="Mangafox",
+        sourceUrl="https://fanfox.net/",
+        sourceStatus=SourceStatus.READY_TO_USE,
+    ),
 }

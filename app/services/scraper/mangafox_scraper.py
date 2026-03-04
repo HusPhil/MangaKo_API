@@ -25,15 +25,15 @@ from app.schemas.manga_schema import (
 DIMENSION_WORKER_URL = "https://mangabuddy-image-dimension.REDACTED.workers.dev/"
 
 DEFAULT_HEADERS = {
-    "Referer": "https://manhuato.com/",
+    "Referer": "https://fanfox.net/",
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36",
 }
 
-SOURCE_NAME = "manhuato"
+SOURCE_NAME = "mangafox"
 BLURHASH_ENDPOINT = "https://REDACTED/api/blurhash"
 
 
-class ManhuatoScraper(BaseScraper):
+class MangafoxScraper(BaseScraper):
     def __init__(self):
         self.AsyncClient = AsyncSession(impersonate="chrome", headers=DEFAULT_HEADERS)
 
@@ -41,7 +41,9 @@ class ManhuatoScraper(BaseScraper):
 
         async with self.AsyncClient as client:
             # Standard search query parameter for WordPress-based sites like Asura Scans
-            url = f"https://fanfox.net/manga/onepunch_man/v01/c001/1.html"
+            url = f"https://fanfox.net/manga/onepunch_man/v01/c001/3.html"
+
+            print(url)
 
             response = await client.get(url)
             response.raise_for_status()
@@ -49,7 +51,15 @@ class ManhuatoScraper(BaseScraper):
             with open("test_files/mangafox.html", "w", encoding="utf-8") as f:
                 f.write(response.text)
 
-        return {"source": SOURCE_NAME, "message": "this is the manhuato scraper"}
+            resp = await client.get(
+                "https://fanfox.net//manga/onepunch_man/v01/c001/chapterfun.ashx?cid=184674&page=3  &key=a13632162dfa2df0",
+                headers={"Referer": url},
+            )
+
+            with open("test_files/kineme.html", "w", encoding="utf-8") as f:
+                f.write(resp.text)
+
+        return {"source": SOURCE_NAME, "message": "this is the mangafox scraper"}
 
     async def scrape_latest_manga(self, url: str) -> LatestMangaListResponse:
         async with self.AsyncClient as client:
@@ -345,82 +355,130 @@ class ManhuatoScraper(BaseScraper):
                 chaptersNavigationMap=chapters_navigation_map,
             )
 
-    async def scrape_chapter_pages(self, url: str) -> list[MangaChapterPage]:
+    async def scrape_chapter_pages(self, url: str) -> List[MangaChapterPage]:
+        # Use the async context manager to keep the session open for all requests
         async with self.AsyncClient as client:
-            # 1. Fetch the chapter page HTML
-            response = await client.get(
-                url,
-                headers=DEFAULT_HEADERS,
-            )
+            # 1. Fetch initial HTML and extract metadata
+            response = await client.get(url, headers=DEFAULT_HEADERS)
             response.raise_for_status()
+            html_content = response.text
 
-            # 2. Parse the HTML tree
-            tree = HTMLParser(response.text)
-            pages: list[MangaChapterPage] = []
+            # Extract imagecount and chapterid
+            image_count_match = re.search(r"var imagecount\s*=\s*(\d+);", html_content)
+            chapter_id_match = re.search(r"var chapterid\s*=\s*(\d+);", html_content)
+
+            # Extract the guid_key dynamically
+            key_match = re.search(r"guidkey\s*=\s*\'([^\']+)\'", html_content)
+            if not key_match:
+                key_match = re.search(r"7=\'\'\+\'([^\']+)\'", html_content)
+
+            guid_key = (
+                key_match.group(1).replace("'", "").replace("+", "")
+                if key_match
+                else "a13632162dfa2df0"
+            )
+
+            if not image_count_match or not chapter_id_match:
+                return []
+
+            image_count = int(image_count_match.group(1))
+            chapter_id = chapter_id_match.group(1)
+
+            # 2. Construct the dynamic ashx base URL
+            # Changes .../c001/1.html to .../c001/chapterfun.ashx
+            base_ashx = re.sub(r"\d+\.html$", "chapterfun.ashx", url)
+            if not base_ashx.endswith("chapterfun.ashx"):
+                base_ashx = url.rstrip("/") + "/chapterfun.ashx"
+
             raw_urls = []
 
-            # ManhuaTo stores chapter images inside .item-photo div containers
-            # within the .chapter-content section
-            for img_tag in tree.css(".chapter-content .item-photo img"):
-                # Extract the image URL from the 'src' attribute
-                img_url = img_tag.attributes.get("src")
-
-                if img_url:
-                    img_url = img_url.strip()
-                    # Normalize protocol-relative URLs
-                    if img_url.startswith("//"):
-                        img_url = f"https:{img_url}"
-                    raw_urls.append(img_url)
-
-            if not raw_urls:
-                return pages
-
-            # 3. Fetch dimensions via Cloudflare Worker using Chunking
-            dimensions_map = {}
-            chunk_size = 40  # Safely below Cloudflare's 50 subrequest limit
-
-            for i in range(0, len(raw_urls), chunk_size):
-                chunk = raw_urls[i : i + chunk_size]
+            # 3. Iterate through batches (2 images per request)
+            for page_idx in range(1, image_count + 1, 2):
+                ashx_url = (
+                    f"{base_ashx}?cid={chapter_id}&page={page_idx}&key={guid_key}"
+                )
 
                 try:
-                    dim_response = await client.post(
-                        DIMENSION_WORKER_URL, json={"urls": chunk}, timeout=30.0
+                    resp = await client.get(ashx_url, headers={"Referer": url})
+                    if resp.status_code != 200:
+                        continue
+
+                    # Extract components of the packer
+                    packed_match = re.search(
+                        r"}\('(.*)',\s*(\d+),\s*(\d+),\s*'(.*)'\.split\('\|'\)",
+                        resp.text,
                     )
 
-                    if dim_response.status_code == 200:
-                        dimensions_data = dim_response.json()
-                        for item in dimensions_data:
-                            dimensions_map[item.get("url")] = item
-                    else:
-                        print(
-                            f"Dimension Worker batch {i} returned status {dim_response.status_code}"
-                        )
+                    if packed_match:
+                        p, a, c, k_raw = packed_match.groups()
+                        words = k_raw.split("|")
+                        a_int, c_int = int(a), int(c)
+
+                        # Decoder for the base-36 packer
+                        def baseN(num, b):
+                            return ((num == 0) and "0") or (
+                                baseN(num // b, b).lstrip("0")
+                                + "0123456789abcdefghijklmnopqrstuvwxyz"[num % b]
+                            )
+
+                        unpacked_js = p
+                        for i in range(c_int - 1, -1, -1):
+                            if words[i]:
+                                unpacked_js = re.sub(
+                                    r"\b" + baseN(i, a_int) + r"\b",
+                                    words[i],
+                                    unpacked_js,
+                                )
+
+                        # 4. Extract URLs and fix the Domain to fanfox.net
+                        pix_match = re.search(r'pix\s*=\s*"([^"]+)"', unpacked_js)
+                        pvalue_match = re.search(r"pvalue\s*=\s*\[(.*?)\]", unpacked_js)
+
+                        if pix_match and pvalue_match:
+                            base_pix = pix_match.group(1)
+                            if base_pix.startswith("//"):
+                                base_pix = f"https:{base_pix}"
+
+                            # Standardize domain to zjcdn.fanfox.net
+                            base_pix = base_pix.replace("mangafox.me", "fanfox.net")
+
+                            files = pvalue_match.group(1).replace('"', "").split(",")
+                            for f in files:
+                                f = f.strip()
+                                img_url = (
+                                    f if f.startswith("http") else f"{base_pix}{f}"
+                                )
+                                if img_url not in raw_urls:
+                                    raw_urls.append(img_url)
 
                 except Exception as e:
-                    print(
-                        f"Failed to communicate with dimension worker on batch {i}: {e}"
+                    print(f"Error fetching batch at page {page_idx}: {e}")
+
+            # 5. Fetch dimensions (MUST be inside the 'async with' block)
+            dimensions_map = {}
+            for i in range(0, len(raw_urls), 40):
+                chunk = raw_urls[i : i + 40]
+                try:
+                    # Use the same 'client' instance while the session is open
+                    dim_res = await client.post(
+                        DIMENSION_WORKER_URL, json={"urls": chunk}, timeout=30.0
                     )
+                    if dim_res.status_code == 200:
+                        for item in dim_res.json():
+                            dimensions_map[item.get("url")] = item
+                except Exception as e:
+                    print("Error fetching dimensions:", e)
 
-                # Delay between batches to prevent rate limiting
-                if i + chunk_size < len(raw_urls):
-                    await asyncio.sleep(0.5)
-
-            # 4. Iterate through the URLs and build the response schema
+            # 6. Build final schema response
+            pages: List[MangaChapterPage] = []
             for img_url in raw_urls:
-                page_id = hashlib.md5(img_url.encode()).hexdigest()
-
-                # Retrieve dimensions from the map
-                dim_info = dimensions_map.get(img_url, {})
-                width = dim_info.get("width", 0)
-                height = dim_info.get("height", 0)
-
                 pages.append(
                     MangaChapterPage(
-                        pageId=page_id,
+                        pageId=hashlib.md5(img_url.encode()).hexdigest(),
                         pageUrl=url,
                         pageImageUrl=img_url,
-                        pageWidth=width,
-                        pageHeight=height,
+                        pageWidth=dimensions_map.get(img_url, {}).get("width", 0),
+                        pageHeight=dimensions_map.get(img_url, {}).get("height", 0),
                         pageBlurhash="",
                     )
                 )
