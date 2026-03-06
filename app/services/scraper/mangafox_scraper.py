@@ -41,7 +41,7 @@ class MangafoxScraper(BaseScraper):
 
         async with self.AsyncClient as client:
             # Standard search query parameter for WordPress-based sites like Asura Scans
-            url = f"https://fanfox.net/manga/onepunch_man/v01/c001/3.html"
+            url = f"https://fanfox.net/releases/"
 
             print(url)
 
@@ -51,55 +51,52 @@ class MangafoxScraper(BaseScraper):
             with open("test_files/mangafox.html", "w", encoding="utf-8") as f:
                 f.write(response.text)
 
-            resp = await client.get(
-                "https://fanfox.net//manga/onepunch_man/v01/c001/chapterfun.ashx?cid=184674&page=3  &key=a13632162dfa2df0",
-                headers={"Referer": url},
-            )
-
-            with open("test_files/kineme.html", "w", encoding="utf-8") as f:
-                f.write(resp.text)
-
         return {"source": SOURCE_NAME, "message": "this is the mangafox scraper"}
 
     async def scrape_latest_manga(self, url: str) -> LatestMangaListResponse:
         async with self.AsyncClient as client:
+            # 1. Fetch the HTML
             response = await client.get(url, headers=DEFAULT_HEADERS)
             response.raise_for_status()
 
             tree = HTMLParser(response.text)
             latest_manga: List[Manga] = []
 
-            # 1. Target the list items inside the main container
-            for item in tree.css(".list_wrap ul li"):
-                # Extract Title and URL from the .visual .manga-cover link
-                link_tag = item.css_first(".visual .manga-cover a")
-                img_tag = item.css_first(".visual .manga-cover img")
+            # 2. Target the list items inside the manga-list-4 container
+            for item in tree.css(".manga-list-4-list li"):
+                # Extract Title and URL from the title paragraph link
+                title_tag = item.css_first(".manga-list-4-item-title a")
+                img_tag = item.css_first("img.manga-list-4-cover")
 
-                if not link_tag or not img_tag:
+                if not title_tag or not img_tag:
                     continue
 
-                manga_title = img_tag.attributes.get("alt", "").strip()
-                raw_url = link_tag.attributes.get("href")
+                manga_title = title_tag.text(strip=True)
+                raw_url = title_tag.attributes.get("href")
 
                 if not raw_url:
                     continue
 
                 # Ensure the URL is absolute
                 manga_url = (
-                    f"https://manhuato.com{raw_url}"
+                    f"https://fanfox.net{raw_url}"
                     if raw_url.startswith("/")
                     else raw_url
                 )
 
-                # Handle cover image with lazy-loading fallback
-                manga_cover = img_tag.attributes.get(
-                    "data-original"
-                ) or img_tag.attributes.get("src")
-
-                if not manga_cover:
+                # 3. Handle cover image and apply domain replacement
+                original_cover = img_tag.attributes.get("src")
+                if not original_cover:
                     continue
 
-                # Generate deterministic ID
+                # Normalize protocol-relative URLs
+                if original_cover.startswith("//"):
+                    original_cover = f"https:{original_cover}"
+
+                # Replace the mfcdn.net domain with fanfox.net
+                manga_cover = original_cover.replace("mfcdn.net", "fanfox.net")
+
+                # 4. Generate deterministic ID
                 manga_id = hashlib.md5(manga_url.encode()).hexdigest()
 
                 latest_manga.append(
@@ -112,18 +109,19 @@ class MangafoxScraper(BaseScraper):
                     )
                 )
 
-            # 2. Extract "Next Page" URL from the pagination element
+            # 5. Extract "Next Page" URL from the pager-list element
             next_url = None
-            # Targeting the link with the right arrow icon
-            next_tag = tree.css_first(".pagination li a[aria-label='Next']")
+            # Targeting the link with the ">" character
+            next_tag = tree.css_first(".pager-list-left a:last-child")
 
-            if next_tag:
+            if next_tag and next_tag.text() == ">":
                 raw_next = next_tag.attributes.get("href")
                 if raw_next:
-                    if raw_next.startswith("/"):
-                        next_url = f"https://manhuato.com{raw_next}"
-                    else:
-                        next_url = raw_next
+                    next_url = (
+                        f"https://fanfox.net{raw_next}"
+                        if raw_next.startswith("/")
+                        else raw_next
+                    )
 
             return LatestMangaListResponse(
                 source=SOURCE_NAME, latest_manga=latest_manga, next_url=next_url
@@ -138,17 +136,23 @@ class MangafoxScraper(BaseScraper):
             tree = HTMLParser(response.text)
             popular_manga: List[Manga] = []
 
-            # 2. Select items using the ManhuaTo list structure
-            # Items are inside .list_wrap > ul > li
-            for item in tree.css(".list_wrap ul li"):
-                link_tag = item.css_first(".visual .manga-cover a")
-                img_tag = item.css_first(".visual .manga-cover img")
+            # 2. Select items using the Manga Fox leaderboard structure
+            # Items are found in ul.manga-list-1-list > li
+            for item in tree.css(".manga-list-1-list li"):
+                link_tag = item.css_first("a")
+                title_tag = item.css_first(".manga-list-1-item-title a")
+                img_tag = item.css_first("img.manga-list-1-cover")
 
                 if not link_tag or not img_tag:
                     continue
 
-                # Extract Title from img alt and URL from the link
-                manga_title = img_tag.attributes.get("alt", "").strip()
+                # Extract Title and URL
+                # Fallback to img alt if title_tag text is empty
+                manga_title = (
+                    title_tag.text(strip=True)
+                    if title_tag
+                    else img_tag.attributes.get("alt", "")
+                ).strip()
                 raw_url = link_tag.attributes.get("href")
 
                 if not raw_url:
@@ -156,20 +160,24 @@ class MangafoxScraper(BaseScraper):
 
                 # Ensure the URL is absolute
                 manga_url = (
-                    f"https://manhuato.com{raw_url}"
+                    f"https://fanfox.net{raw_url}"
                     if raw_url.startswith("/")
                     else raw_url
                 )
 
-                # Handle cover image: use data-original for the actual high-quality thumbnail
-                manga_cover = img_tag.attributes.get(
-                    "data-original"
-                ) or img_tag.attributes.get("src")
-
-                if not manga_cover:
+                # 3. Handle cover image and apply domain replacement
+                original_cover = img_tag.attributes.get("src")
+                if not original_cover:
                     continue
 
-                # Generate deterministic ID
+                # Normalize protocol-relative URLs
+                if original_cover.startswith("//"):
+                    original_cover = f"https:{original_cover}"
+
+                # Replace the mfcdn.net domain with fanfox.net
+                manga_cover = original_cover.replace("mfcdn.net", "fanfox.net")
+
+                # 4. Generate deterministic ID
                 manga_id = hashlib.md5(manga_url.encode()).hexdigest()
 
                 popular_manga.append(
@@ -182,17 +190,21 @@ class MangafoxScraper(BaseScraper):
                     )
                 )
 
-            # 3. Extract "Next Page" URL from the pagination element
+            # 5. Extract "Next Page" URL
+            # Manga Fox leaderboard usually handles pagination via separate tabs or page numbers
             next_url = None
-            next_tag = tree.css_first(".pagination li a[aria-label='Next']")
+            next_tag = tree.css_first(
+                ".pager-list-left a.btn:last-child"
+            ) or tree.css_first("a.next")
 
-            if next_tag:
+            if next_tag and "Next" in next_tag.text():
                 raw_next = next_tag.attributes.get("href")
                 if raw_next:
-                    if raw_next.startswith("/"):
-                        next_url = f"https://manhuato.com{raw_next}"
-                    else:
-                        next_url = raw_next
+                    next_url = (
+                        f"https://fanfox.net{raw_next}"
+                        if raw_next.startswith("/")
+                        else raw_next
+                    )
 
             return PopularMangaListResponse(
                 sourceName=SOURCE_NAME, popular_manga=popular_manga, next_url=next_url
@@ -200,9 +212,8 @@ class MangafoxScraper(BaseScraper):
 
     async def scrape_manga_search(self, keyword: str) -> MangaSearchResponse:
         async with self.AsyncClient as client:
-            # ManhuaTo standard search URL structure
-            # Note: ManhuaTo uses spaces in the URL for search keywords based on the HTML metadata
-            search_url = f"https://manhuato.com/{quote(keyword)}"
+            # Manga Fox search URL structure
+            search_url = f"https://fanfox.net/search?title={quote(keyword)}"
 
             response = await client.get(search_url, headers=DEFAULT_HEADERS)
             response.raise_for_status()
@@ -210,13 +221,12 @@ class MangafoxScraper(BaseScraper):
             tree = HTMLParser(response.text)
             results = []
 
-            # Target the list items inside the main results container
-            # The provided HTML structure: .section_todayup > .list_wrap > ul > li
-            for item in tree.css(".list_wrap ul li"):
-                # 1. Extract Title and URL from the .main_text h3 link
-                title_tag = item.css_first(".main_text h3.title a")
-                # 2. Extract Image from the .visual .manga-cover container
-                img_tag = item.css_first(".visual .manga-cover img")
+            # 1. Target the list items in the search results grid
+            for item in tree.css(".manga-list-4-list li"):
+                # 2. Extract Title and URL from the title paragraph link
+                title_tag = item.css_first(".manga-list-4-item-title a")
+                # 3. Extract Image from the cover image tag
+                img_tag = item.css_first("img.manga-list-4-cover")
 
                 if not title_tag or not img_tag:
                     continue
@@ -224,22 +234,29 @@ class MangafoxScraper(BaseScraper):
                 manga_title = title_tag.text(strip=True)
                 raw_url = title_tag.attributes.get("href")
 
-                # 3. Normalize absolute URL
+                if not raw_url:
+                    continue
+
+                # 4. Normalize absolute URL for the manga page
                 manga_url = (
-                    f"https://manhuato.com{raw_url}"
+                    f"https://fanfox.net{raw_url}"
                     if raw_url.startswith("/")
                     else raw_url
                 )
 
-                # 4. Handle cover image (prefer data-original for lazy-loaded images)
-                manga_cover = img_tag.attributes.get(
-                    "data-original"
-                ) or img_tag.attributes.get("src")
-
-                if not manga_cover:
+                # 5. Handle cover image and apply domain replacement
+                original_cover = img_tag.attributes.get("src")
+                if not original_cover:
                     continue
 
-                # 5. Generate deterministic ID
+                # Normalize protocol-relative URLs
+                if original_cover.startswith("//"):
+                    original_cover = f"https:{original_cover}"
+
+                # Replace the mfcdn.net domain with fanfox.net as requested
+                manga_cover = original_cover.replace("mfcdn.net", "fanfox.net")
+
+                # 6. Generate deterministic ID
                 manga_id = hashlib.md5(manga_url.encode()).hexdigest()
 
                 results.append(
@@ -265,45 +282,33 @@ class MangafoxScraper(BaseScraper):
             tree = HTMLParser(response.text)
 
             # 2. Extract Manga Details
-            # Description is inside .desc tags (there are two, the first usually contains the synopsis)
-            desc_tag = tree.css_first(".desc")
+            # Description is found in the hidden .fullcontent class or the visible .detail-info-right-content
+            desc_tag = tree.css_first(".fullcontent") or tree.css_first(
+                ".detail-info-right-content"
+            )
             manga_description = (
                 desc_tag.text(strip=True) if desc_tag else "No description available."
             )
 
-            # Alternative names are in the h2 class "alternative"
-            alt_names_tag = tree.css_first("h2.alternative")
+            # Alternative names are not explicitly provided in a separate tag in this HTML,
+            # but often appear in metadata or can be left empty
             manga_alternative_names = []
-            if alt_names_tag:
-                # Splits by comma and cleans whitespace
-                manga_alternative_names = [
-                    name.strip() for name in alt_names_tag.text().split(",")
-                ]
 
-            # Extract Tags/Genres from the .hentai-info section
-            manga_tags = []
-            for tag in tree.css(".hentai-info .item-tag"):
-                # Filtering out tags that might be authors or artists by checking the parent text
-                parent_text = (
-                    tag.parent.parent.text() if tag.parent and tag.parent.parent else ""
-                )
-                if "Genres" in parent_text:
-                    manga_tags.append(tag.text(strip=True))
+            # Extract Tags/Genres from the .detail-info-right-tag-list
+            manga_tags = [
+                a.text(strip=True) for a in tree.css(".detail-info-right-tag-list a")
+            ]
 
             # Extract Author and Status
             manga_author = "Unknown"
-            manga_status = "Ongoing"
+            author_tag = tree.css_first(".detail-info-right-say a")
+            if author_tag:
+                manga_author = author_tag.text(strip=True)
 
-            for line in tree.css(".hentai-info .line"):
-                line_text = line.text()
-                if "Authors:" in line_text:
-                    author_tag = line.css_first(".item-tag")
-                    if author_tag:
-                        manga_author = author_tag.text(strip=True)
-                elif "Status:" in line_text:
-                    status_content = line.css_first(".line-content")
-                    if status_content:
-                        manga_status = status_content.text(strip=True)
+            manga_status = "Ongoing"
+            status_tag = tree.css_first(".detail-info-right-title-tip")
+            if status_tag:
+                manga_status = status_tag.text(strip=True)
 
             details = MangaDetails(
                 mangaDescription=manga_description,
@@ -315,36 +320,45 @@ class MangafoxScraper(BaseScraper):
 
             # 3. Extract Chapters
             chapters: List[MangaChapter] = []
-            # Chapters are in <li class="citem"> inside <ul id="chapter-list">
-            for item in tree.css("#chapter-list li.citem"):
-                link_tag = item.css_first("a")
-                if not link_tag:
-                    continue
+            # Target the requested <div id="list-2"> for the chapter list
+            chapter_list_container = tree.css_first("#list-2")
 
-                raw_url = link_tag.attributes.get("href")
-                if not raw_url:
-                    continue
+            if chapter_list_container:
+                for item in chapter_list_container.css("ul.detail-main-list li"):
+                    link_tag = item.css_first("a")
+                    if not link_tag:
+                        continue
 
-                chapter_url = (
-                    f"https://manhuato.com{raw_url}"
-                    if raw_url.startswith("/")
-                    else raw_url
-                )
+                    raw_url = link_tag.attributes.get("href")
+                    if not raw_url:
+                        continue
 
-                chapter_id = hashlib.md5(chapter_url.encode()).hexdigest()
-                chapter_name = link_tag.text(strip=True)
-
-                time_tag = item.css_first(".time")
-                chapter_time = time_tag.text(strip=True) if time_tag else "Unknown Time"
-
-                chapters.append(
-                    MangaChapter(
-                        chapterId=chapter_id,
-                        chapterTitle=chapter_name,
-                        chapterUrl=chapter_url,
-                        chapterTimeUploaded=chapter_time,
+                    # Ensure the URL is absolute
+                    chapter_url = (
+                        f"https://fanfox.net{raw_url}"
+                        if raw_url.startswith("/")
+                        else raw_url
                     )
-                )
+
+                    chapter_id = hashlib.md5(chapter_url.encode()).hexdigest()
+
+                    # In Manga Fox, the title and date are inside separate paragraphs within the link
+                    title_p = item.css_first("p.title3")
+                    time_p = item.css_first("p.title2")
+
+                    chapter_name = (
+                        title_p.text(strip=True) if title_p else "Unknown Chapter"
+                    )
+                    chapter_time = time_p.text(strip=True) if time_p else "Unknown Time"
+
+                    chapters.append(
+                        MangaChapter(
+                            chapterId=chapter_id,
+                            chapterTitle=chapter_name,
+                            chapterUrl=chapter_url,
+                            chapterTimeUploaded=chapter_time,
+                        )
+                    )
 
             # 4. Build navigation map
             chapters_navigation_map = self._build_chapters_navigation_map(chapters)

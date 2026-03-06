@@ -24,7 +24,7 @@ async def test_mangafox():
 
 @router.get("/manga/latest/{page}")
 async def get_latest_manga(page: int) -> LatestMangaListResponse:
-    url = f"https://manhuato.com/new-manga?page={page}"
+    url = f"https://fanfox.net/releases/{page}.html"
     try:
         scraper = get_scraper(source)
         latest_manga = await scraper.scrape_latest_manga(url)
@@ -35,7 +35,7 @@ async def get_latest_manga(page: int) -> LatestMangaListResponse:
 
 @router.get("/manga/popular")  # dont work
 async def get_popular_manga() -> PopularMangaListResponse:
-    url = f"https://manhuato.com/best-manga?page=1"
+    url = f"https://fanfox.net/ranking/"
     try:
         scraper = get_scraper(source)
         popular_manga = await scraper.scrape_popular_manga(url)
