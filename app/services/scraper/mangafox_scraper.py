@@ -1,4 +1,5 @@
 import hashlib
+from http import cookies
 import re
 import asyncio
 from typing import List
@@ -41,7 +42,7 @@ class MangafoxScraper(BaseScraper):
 
         async with self.AsyncClient as client:
             # Standard search query parameter for WordPress-based sites like Asura Scans
-            url = f"https://fanfox.net/releases/"
+            url = f"https://fanfox.net/manga/re_monster/"
 
             print(url)
 
@@ -130,7 +131,9 @@ class MangafoxScraper(BaseScraper):
     async def scrape_popular_manga(self, url: str) -> PopularMangaListResponse:
         async with self.AsyncClient as client:
             # 1. Fetch the HTML
-            response = await client.get(url, headers=DEFAULT_HEADERS)
+            response = await client.get(
+                url, headers=DEFAULT_HEADERS, cookies={"isAdult": "1"}
+            )
             response.raise_for_status()
 
             tree = HTMLParser(response.text)
@@ -273,16 +276,19 @@ class MangafoxScraper(BaseScraper):
 
     async def scrape_manga_info(self, url: str) -> MangaInfoResponse:
         async with self.AsyncClient as client:
-            # 1. Fetch the HTML
+            # 1. Fetch the HTML with the adult cookie to avoid blocks
             response = await client.get(
-                url, headers=DEFAULT_HEADERS, allow_redirects=True
+                url,
+                headers=DEFAULT_HEADERS,
+                cookies={"isAdult": "1"},
+                allow_redirects=True,
             )
             response.raise_for_status()
 
             tree = HTMLParser(response.text)
 
             # 2. Extract Manga Details
-            # Description is found in the hidden .fullcontent class or the visible .detail-info-right-content
+            # Priority on .fullcontent to avoid truncated text
             desc_tag = tree.css_first(".fullcontent") or tree.css_first(
                 ".detail-info-right-content"
             )
@@ -290,16 +296,12 @@ class MangafoxScraper(BaseScraper):
                 desc_tag.text(strip=True) if desc_tag else "No description available."
             )
 
-            # Alternative names are not explicitly provided in a separate tag in this HTML,
-            # but often appear in metadata or can be left empty
             manga_alternative_names = []
-
-            # Extract Tags/Genres from the .detail-info-right-tag-list
+            # Genres are inside the tag list container
             manga_tags = [
                 a.text(strip=True) for a in tree.css(".detail-info-right-tag-list a")
             ]
 
-            # Extract Author and Status
             manga_author = "Unknown"
             author_tag = tree.css_first(".detail-info-right-say a")
             if author_tag:
@@ -318,13 +320,19 @@ class MangafoxScraper(BaseScraper):
                 mangaAlternativeNames=manga_alternative_names,
             )
 
-            # 3. Extract Chapters
-            chapters: List[MangaChapter] = []
-            # Target the requested <div id="list-2"> for the chapter list
-            chapter_list_container = tree.css_first("#list-2")
+            # 3. Choose the more complete chapter list
+            list_1 = tree.css_first("#list-1")
+            list_2 = tree.css_first("#list-2")
 
-            if chapter_list_container:
-                for item in chapter_list_container.css("ul.detail-main-list li"):
+            count_1 = len(list_1.css("ul.detail-main-list li")) if list_1 else 0
+            count_2 = len(list_2.css("ul.detail-main-list li")) if list_2 else 0
+
+            # Choose larger container
+            target_container = list_1 if count_1 >= count_2 else list_2
+
+            chapters: List[MangaChapter] = []
+            if target_container:
+                for item in target_container.css("ul.detail-main-list li"):
                     link_tag = item.css_first("a")
                     if not link_tag:
                         continue
@@ -333,30 +341,29 @@ class MangafoxScraper(BaseScraper):
                     if not raw_url:
                         continue
 
-                    # Ensure the URL is absolute
                     chapter_url = (
                         f"https://fanfox.net{raw_url}"
                         if raw_url.startswith("/")
                         else raw_url
                     )
-
                     chapter_id = hashlib.md5(chapter_url.encode()).hexdigest()
 
-                    # In Manga Fox, the title and date are inside separate paragraphs within the link
+                    # Manga Fox specific structure for chapter titles and dates
                     title_p = item.css_first("p.title3")
                     time_p = item.css_first("p.title2")
-
-                    chapter_name = (
-                        title_p.text(strip=True) if title_p else "Unknown Chapter"
-                    )
-                    chapter_time = time_p.text(strip=True) if time_p else "Unknown Time"
 
                     chapters.append(
                         MangaChapter(
                             chapterId=chapter_id,
-                            chapterTitle=chapter_name,
+                            chapterTitle=(
+                                title_p.text(strip=True)
+                                if title_p
+                                else "Unknown Chapter"
+                            ),
                             chapterUrl=chapter_url,
-                            chapterTimeUploaded=chapter_time,
+                            chapterTimeUploaded=(
+                                time_p.text(strip=True) if time_p else "Unknown Time"
+                            ),
                         )
                     )
 
