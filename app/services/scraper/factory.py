@@ -1,5 +1,6 @@
 from app.services.scraper.mahuato_scraper import ManhuatoScraper
 from app.services.scraper.mangafox_scraper import MangafoxScraper
+from app.services.scraper.weebcentral_scraper import WeebCentralScraper
 
 from .asura_scans_scraper import AsuraScansScraper
 from .mangakakalot_scraper import MangakakalotScraper
@@ -14,6 +15,7 @@ SCRAPER_MAP = {
     "asura_scans": AsuraScansScraper,
     "manhuato": ManhuatoScraper,
     "mangafox": MangafoxScraper,
+    "weeb_central": WeebCentralScraper,
 }
 
 

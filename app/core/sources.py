@@ -12,7 +12,7 @@ SUPPORTED_SOURCES: dict[str, Source] = {
         sourceId="comick",
         sourceName="Comick",
         sourceUrl="https://comick.live/",
-        sourceStatus=SourceStatus.READY_TO_USE,
+        sourceStatus=SourceStatus.DEPRECATED,
     ),
     "asura scans": Source(
         sourceId="asura_scans",
@@ -30,6 +30,12 @@ SUPPORTED_SOURCES: dict[str, Source] = {
         sourceId="mangafox",
         sourceName="Mangafox",
         sourceUrl="https://fanfox.net/",
+        sourceStatus=SourceStatus.READY_TO_USE,
+    ),
+    "weeb_central": Source(
+        sourceId="weeb_central",
+        sourceName="Weeb Central",
+        sourceUrl="https://weebcentral.com/",
         sourceStatus=SourceStatus.READY_TO_USE,
     ),
 }

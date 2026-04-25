@@ -8,6 +8,7 @@ from app.api.v1.endpoints import (
     manhuato_router,
     scrape_router,
     mangakakalot_router,
+    weebcentral_router,
 )
 
 router = APIRouter()
@@ -26,6 +27,10 @@ router.include_router(mangafox_router.router, prefix="/mangafox", tags=["Mangafo
 
 router.include_router(
     image_router.router, prefix="/image_service", tags=["Image Service"]
+)
+
+router.include_router(
+    weebcentral_router.router, prefix="/weebcentral", tags=["WeebCentral"]
 )
 
 
