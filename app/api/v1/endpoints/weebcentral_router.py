@@ -14,7 +14,7 @@ source = "weeb_central"
 
 
 @router.get("/")
-async def test_mangafox():
+async def test_weebcentral():
     try:
         scraper = get_scraper(source)
         return await scraper.scrape()

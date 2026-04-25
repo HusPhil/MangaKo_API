@@ -30,7 +30,7 @@ router.include_router(
 )
 
 router.include_router(
-    weebcentral_router.router, prefix="/weebcentral", tags=["WeebCentral"]
+    weebcentral_router.router, prefix="/weeb_central", tags=["WeebCentral"]
 )
 
 
