@@ -47,9 +47,6 @@ class WeebCentralScraper(BaseScraper):
             response = await client.get(url)
             response.raise_for_status()
 
-            with open("test_files/weebcentral.html", "w", encoding="utf-8") as f:
-                f.write(response.text)
-
         return {"source": SOURCE_NAME, "message": "this is the weebcentral scraper"}
 
     async def scrape_latest_manga(self, url: str) -> LatestMangaListResponse:
@@ -57,10 +54,6 @@ class WeebCentralScraper(BaseScraper):
             # 1. Fetch the HTML
             response = await client.get(url, headers=DEFAULT_HEADERS)
             response.raise_for_status()
-
-            # Debug save
-            with open("test_files/weebcentral.html", "w", encoding="utf-8") as f:
-                f.write(response.text)
 
             tree = HTMLParser(response.text)
             latest_manga: List[Manga] = []
