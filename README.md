@@ -2,6 +2,8 @@
 
 FastAPI manga-scraping API. Platform-agnostic. Python 3.12. All direct dependencies are pinned in `requirements.txt`.
 
+**Mobile Client:** [mangako](https://github.com/HusPhil/mangako)
+
 ## Commands
 
 - Run locally: `uvicorn app.main:app --reload` (from repo root)
