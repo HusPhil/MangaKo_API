@@ -1,12 +1,13 @@
 import hashlib
-from http import cookies
-import re
-import asyncio
+from io import BytesIO
+import imagesize
+
+
 from typing import List
 
 from curl_cffi import AsyncSession
 import httpx
-from urllib.parse import quote, urlparse, urlunparse
+from urllib.parse import quote
 from selectolax.parser import HTMLParser
 from app.core.sources import SUPPORTED_SOURCES
 from .base import BaseScraper
@@ -40,9 +41,7 @@ class WeebCentralScraper(BaseScraper):
 
         async with self.AsyncClient as client:
             # Standard search query parameter for WordPress-based sites like Asura Scans
-            url = f"https://weebcentral.com/search/data?author=&text=murim&sort=Best%20Match&order=Descending&official=Any&anime=Any&adult=Any&display_mode=Full%20Display"
-
-            print(url)
+            url = f"https://weebcentral.com/series/01J76XYDT3Z0ZJ7NNG4Q74QFFG/Magic-Emperor"
 
             response = await client.get(url)
             response.raise_for_status()
@@ -84,16 +83,8 @@ class WeebCentralScraper(BaseScraper):
                 if title_node:
                     manga_title = title_node.text(strip=True)
 
-            print(
-                f"Found manga - Title: {manga_title}, Link: {link_tag.attributes.get('href') if link_tag else 'N/A'}, Image: {img_tag.attributes.get('src') if img_tag else 'N/A'}"
-            )
-
             # Debug: check what we found
             if not link_tag or not img_tag or not manga_title:
-                # Log specifically what is missing to troubleshoot
-                print(
-                    f"Skipping: link={bool(link_tag)}, img={bool(img_tag)}, title={bool(manga_title)}"
-                )
                 continue
 
             raw_url = link_tag.attributes.get("href")
@@ -332,7 +323,12 @@ class WeebCentralScraper(BaseScraper):
                 if not link_node:
                     continue
 
-                chapter_url = link_node.attributes.get("href", "")
+                chapter_url = (
+                    url_parts[0]
+                    + "//"
+                    + url_parts[2]
+                    + link_node.attributes.get("href", "")
+                )
 
                 # --- CLEAN TITLE EXTRACTION ---
                 # The structure is: <span class="grow"><span class="">Text</span><span x-show="...">SVG</span></span>
@@ -405,8 +401,12 @@ class WeebCentralScraper(BaseScraper):
 
                 # 5. Extract dimensions from attributes
                 # WeebCentral provides width and height directly in the HTML attributes
-                width = int(img.attributes.get("width", 0))
-                height = int(img.attributes.get("height", 0))
+                response = await client.get(
+                    img_url, headers=DEFAULT_HEADERS, cookies={"isAdult": "1"}
+                )
+                response.raise_for_status()
+
+                width, height = imagesize.get(BytesIO(response.content))
 
                 pages.append(
                     MangaChapterPage(

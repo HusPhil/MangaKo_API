@@ -38,3 +38,4 @@ typing_extensions==4.13.2
 urllib3==2.4.0
 uvicorn==0.34.2
 curl_cffi==0.14.0
+imagesize==2.0.1
