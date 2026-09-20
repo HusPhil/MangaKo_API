@@ -38,4 +38,10 @@ SUPPORTED_SOURCES: dict[str, Source] = {
         sourceUrl="https://weebcentral.com/",
         sourceStatus=SourceStatus.READY_TO_USE,
     ),
+    "manhuaplus": Source(
+        sourceId="manhuaplus",
+        sourceName="ManhuaPlus",
+        sourceUrl="https://manhuaplus.top/",
+        sourceStatus=SourceStatus.READY_TO_USE,
+    ),
 }
