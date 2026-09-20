@@ -2,22 +2,17 @@ from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
     asura_scans_router,
-    auth_router,
     comick_router,
     image_router,
     mangafox_router,
+    manhuaplus_router,
     manhuato_router,
-    scrape_router,
     mangakakalot_router,
     weebcentral_router,
 )
 
 router = APIRouter()
-router.include_router(
-    scrape_router.router,
-    prefix="/scrape",
-    tags=["Scrape"],
-)
+
 router.include_router(
     mangakakalot_router.router,
     prefix="/mangakakalot",
@@ -53,8 +48,9 @@ router.include_router(
     prefix="/weeb_central",
     tags=["WeebCentral"],
 )
+
 router.include_router(
-    auth_router.router,
-    prefix="/auth",
-    tags=["Auth"],
+    manhuaplus_router.router,
+    prefix="/manhuaplus",
+    tags=["manhuaplus"],
 )
