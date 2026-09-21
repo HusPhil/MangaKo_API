@@ -1,9 +1,12 @@
+import asyncio
 import hashlib
+from io import BytesIO
 from typing import List
 
 from curl_cffi import AsyncSession
 from urllib.parse import quote, urljoin
 
+from imagesize import imagesize
 from selectolax.parser import HTMLParser
 
 from app.core.sources import SUPPORTED_SOURCES
@@ -363,8 +366,67 @@ class ManhuaPlusScraper(BaseScraper):
             )
             response.raise_for_status()
 
+            base_url = str(response.url)
+
             tree = HTMLParser(response.text)
             pages: list[MangaChapterPage] = []
+            seen_urls = set()
+            page_entries = []  # (page_index, image_url)
+
+            for position, node in enumerate(
+                tree.css("div.reading-detail div.page-chapter"), start=1
+            ):
+                img = node.css_first("img")
+                if not img:
+                    continue
+
+                image_src = (
+                    img.attributes.get("data-original")
+                    or img.attributes.get("data-src")
+                    or img.attributes.get("src")
+                    or ""
+                ).strip()
+
+                if not image_src or image_src in seen_urls:
+                    continue
+                seen_urls.add(image_src)
+
+                image_url = urljoin(base_url, image_src)
+                page_index = img.attributes.get("data-index") or str(position)
+                page_entries.append((page_index, image_url))
+
+            semaphore = asyncio.Semaphore(5)  # max 5 downloads at once
+
+            async def get_image_size(image_url: str) -> tuple[int, int]:
+                async with semaphore:
+                    try:
+                        img_response = await client.get(
+                            image_url, headers=DEFAULT_HEADERS
+                        )
+                        img_response.raise_for_status()
+                        width, height = imagesize.get(BytesIO(img_response.content))
+                        # imagesize returns (-1, -1) when it can't read the format
+                        if width < 0 or height < 0:
+                            return 0, 0
+                        return width, height
+                    except Exception:
+                        return 0, 0
+
+            sizes = await asyncio.gather(
+                *(get_image_size(image_url) for _, image_url in page_entries)
+            )
+
+            for (page_index, image_url), (width, height) in zip(page_entries, sizes):
+                pages.append(
+                    MangaChapterPage(
+                        pageId=hashlib.md5(image_url.encode()).hexdigest(),
+                        pageUrl=f"{base_url}#page_{page_index}",
+                        pageImageUrl=image_url,
+                        pageWidth=width,
+                        pageHeight=height,
+                        pageBlurhash="",
+                    )
+                )
 
             return pages
 
