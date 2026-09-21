@@ -8,10 +8,13 @@ from app.api.v1.endpoints import (
     manhuaplus_router,
     manhuato_router,
     mangakakalot_router,
+    scrape_router,
     weebcentral_router,
 )
 
 router = APIRouter()
+
+router.include_router(scrape_router.router, prefix="/scrape", tags=["Scrape"])
 
 router.include_router(
     mangakakalot_router.router,
