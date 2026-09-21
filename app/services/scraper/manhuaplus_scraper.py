@@ -122,11 +122,69 @@ class ManhuaPlusScraper(BaseScraper):
             response.raise_for_status()
 
             tree = HTMLParser(response.text)
-            popular_manga: List[Manga] = []
+            latest_manga: List[Manga] = []
             next_url = None
+            seen_ids = set()
+
+            for item in tree.css("div.items div.item"):
+                link = item.css_first("figure div.image a")
+                if not link:
+                    continue
+
+                href = link.attributes.get("href")
+                if not href:
+                    continue
+
+                manga_url = urljoin(url, href.strip())
+                manga_id = manga_url.rstrip("/").split("/")[-1]
+
+                title_node = item.css_first("figcaption h3 a")
+                manga_title = (
+                    link.attributes.get("title")
+                    or (title_node.text(strip=True) if title_node else "")
+                    or ""
+                ).strip()
+
+                img = item.css_first("figure div.image img")
+                manga_cover = ""
+                if img:
+                    cover_src = (
+                        img.attributes.get("data-original")
+                        or img.attributes.get("data-src")
+                        or img.attributes.get("src")
+                        or ""
+                    )
+                    manga_cover = urljoin(url, cover_src.strip())
+
+                # skip broken or duplicate entries
+                if not manga_id or not manga_title or manga_id in seen_ids:
+                    continue
+                seen_ids.add(manga_id)
+
+                latest_manga.append(
+                    Manga(
+                        mangaSource=SUPPORTED_SOURCES[SOURCE_NAME],
+                        mangaId=manga_id,
+                        mangaTitle=manga_title,
+                        mangaUrl=manga_url,
+                        mangaCover=manga_cover,
+                    )
+                )
+
+            # next page: the <li> right after the active page in the pagination
+            next_node = tree.css_first("ul.pagination li.active + li a")
+            next_href = next_node.attributes.get("href") if next_node else None
+
+            # fallback to <link rel="next"> in the head
+            if not next_href:
+                rel_next = tree.css_first("link[rel='next']")
+                next_href = rel_next.attributes.get("href") if rel_next else None
+
+            if next_href:
+                next_url = urljoin(url, next_href)
 
             return PopularMangaListResponse(
-                sourceName=SOURCE_NAME, popular_manga=popular_manga, next_url=next_url
+                sourceName=SOURCE_NAME, popular_manga=latest_manga, next_url=next_url
             )
 
     async def scrape_manga_search(self, keyword: str) -> MangaSearchResponse:
