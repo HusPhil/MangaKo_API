@@ -245,6 +245,8 @@ class ManhuaPlusScraper(BaseScraper):
             return MangaSearchResponse(source=SOURCE_NAME, results=results)
 
     async def scrape_manga_info(self, url: str) -> MangaInfoResponse:
+        from urllib.parse import urljoin
+
         async with self.AsyncClient as client:
 
             response = await client.get(
@@ -252,12 +254,57 @@ class ManhuaPlusScraper(BaseScraper):
             )
             response.raise_for_status()
 
+            with open(
+                "test_files/manhuaplus_test_info.html", "w", encoding="utf-8"
+            ) as f:
+                f.write(response.text)
+
+            # base for resolving relative chapter links (handles redirects)
+            base_url = str(response.url)
+
             tree = HTMLParser(response.text)
             manga_description = "No description available."
             manga_tags = []
             manga_status = "Unknown"
             manga_alternative_names = []
             manga_author = "Unknown"
+
+            # description
+            desc_node = tree.css_first("div.detail-content p")
+            if desc_node:
+                desc_text = desc_node.text(strip=True)
+                if desc_text:
+                    manga_description = desc_text
+
+            # alternative names (separated by ";")
+            other_node = tree.css_first("ul.list-info li.othername h2.other-name")
+            if other_node:
+                manga_alternative_names = [
+                    name.strip()
+                    for name in other_node.text(strip=True).split(";")
+                    if name.strip()
+                ]
+
+            # author(s)
+            authors = [
+                a.text(strip=True)
+                for a in tree.css("ul.list-info li.author a")
+                if a.text(strip=True)
+            ]
+            if authors:
+                manga_author = ", ".join(authors)
+
+            # status
+            status_node = tree.css_first("ul.list-info li.status p.col-xs-8")
+            if status_node and status_node.text(strip=True):
+                manga_status = status_node.text(strip=True)
+
+            # genres
+            manga_tags = [
+                a.text(strip=True)
+                for a in tree.css("ul.list-info li.kind a")
+                if a.text(strip=True)
+            ]
 
             details = MangaDetails(
                 mangaDescription=manga_description,
@@ -268,13 +315,29 @@ class ManhuaPlusScraper(BaseScraper):
             )
 
             chapters: List[MangaChapter] = []
-            chapter_items = []
+            chapter_items = tree.css("#nt_listchapter nav ul li")
+            seen_urls = set()
 
             for item in chapter_items:
-                chapter_url = ""
+                link = item.css_first("div.chapter a")
+                if not link:
+                    continue
+
+                href = link.attributes.get("href")
+                if not href:
+                    continue
+
+                chapter_url = urljoin(base_url, href.strip())
+                if chapter_url in seen_urls:
+                    continue
+                seen_urls.add(chapter_url)
+
                 chapter_id = hashlib.md5(chapter_url.encode()).hexdigest()
-                chapter_name = ""
-                chapter_time = ""
+                chapter_name = link.text(strip=True)
+
+                time_node = item.css_first("div.col-xs-4")
+                chapter_time = time_node.text(strip=True) if time_node else ""
+
                 chapters.append(
                     MangaChapter(
                         chapterId=chapter_id,
