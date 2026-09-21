@@ -45,11 +45,6 @@ class MangakakalotScraper(BaseScraper):
                 headers=DEFAULT_HEADERS,
             )
 
-            with open("test_files/manhuato.html", "w", encoding="utf-8") as f:
-                f.write(resp.text)
-
-            # print(chapters_resp.text)
-
         return {"source": SOURCE_NAME, "message": "this is the mangakakalot scraper"}
 
     async def scrape_latest_manga(self, url: str) -> LatestMangaListResponse:

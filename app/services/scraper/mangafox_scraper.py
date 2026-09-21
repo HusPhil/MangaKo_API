@@ -49,9 +49,6 @@ class MangafoxScraper(BaseScraper):
             response = await client.get(url)
             response.raise_for_status()
 
-            with open("test_files/mangafox.html", "w", encoding="utf-8") as f:
-                f.write(response.text)
-
         return {"source": SOURCE_NAME, "message": "this is the mangafox scraper"}
 
     async def scrape_latest_manga(self, url: str) -> LatestMangaListResponse:

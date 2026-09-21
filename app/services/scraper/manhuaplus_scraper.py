@@ -42,9 +42,6 @@ class ManhuaPlusScraper(BaseScraper):
             response = await client.get(url)
             response.raise_for_status()
 
-            with open("test_files/manhuaplus_test.html", "w", encoding="utf-8") as f:
-                f.write(response.text)
-
         return {"source": SOURCE_NAME, "message": "this is the asura scans scraper"}
 
     async def scrape_latest_manga(self, url: str) -> LatestMangaListResponse:
@@ -256,11 +253,6 @@ class ManhuaPlusScraper(BaseScraper):
                 url, headers=DEFAULT_HEADERS, allow_redirects=True
             )
             response.raise_for_status()
-
-            with open(
-                "test_files/manhuaplus_test_info.html", "w", encoding="utf-8"
-            ) as f:
-                f.write(response.text)
 
             # base for resolving relative chapter links (handles redirects)
             base_url = str(response.url)
