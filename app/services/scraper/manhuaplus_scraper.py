@@ -191,11 +191,56 @@ class ManhuaPlusScraper(BaseScraper):
         async with self.AsyncClient as client:
             search_url = f"https://manhuaplus.top/search?keyword={quote(keyword)}"
 
-            response = await client.get(search_url)
+            response = await client.get(search_url, headers=DEFAULT_HEADERS)
             response.raise_for_status()
 
             tree = HTMLParser(response.text)
-            results = []
+            results: List[Manga] = []
+            seen_ids = set()
+
+            for item in tree.css("div.items div.item"):
+                link = item.css_first("figure div.image a")
+                if not link:
+                    continue
+
+                href = link.attributes.get("href")
+                if not href:
+                    continue
+
+                manga_url = urljoin(search_url, href.strip())
+                manga_id = manga_url.rstrip("/").split("/")[-1]
+
+                title_node = item.css_first("figcaption h3 a")
+                manga_title = (
+                    link.attributes.get("title")
+                    or (title_node.text(strip=True) if title_node else "")
+                    or ""
+                ).strip()
+
+                img = item.css_first("figure div.image img")
+                manga_cover = ""
+                if img:
+                    cover_src = (
+                        img.attributes.get("data-original")
+                        or img.attributes.get("data-src")
+                        or img.attributes.get("src")
+                        or ""
+                    )
+                    manga_cover = urljoin(search_url, cover_src.strip())
+
+                if not manga_id or not manga_title or manga_id in seen_ids:
+                    continue
+                seen_ids.add(manga_id)
+
+                results.append(
+                    Manga(
+                        mangaSource=SUPPORTED_SOURCES[SOURCE_NAME],
+                        mangaId=manga_id,
+                        mangaTitle=manga_title,
+                        mangaUrl=manga_url,
+                        mangaCover=manga_cover,
+                    )
+                )
 
             return MangaSearchResponse(source=SOURCE_NAME, results=results)
 
