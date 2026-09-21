@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -50,6 +50,6 @@ app.include_router(api_router, prefix="/api/v1")
 
 
 @app.get("/")
-@limiter.limit("10/minute")
-def index(request):
+@limiter.limit("5/minute")
+def index(request: Request):
     return {"message": "mangako server is working!"}
