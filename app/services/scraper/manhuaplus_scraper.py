@@ -122,7 +122,7 @@ class ManhuaPlusScraper(BaseScraper):
             response.raise_for_status()
 
             tree = HTMLParser(response.text)
-            latest_manga: List[Manga] = []
+            popular_manga: List[Manga] = []
             next_url = None
             seen_ids = set()
 
@@ -161,7 +161,7 @@ class ManhuaPlusScraper(BaseScraper):
                     continue
                 seen_ids.add(manga_id)
 
-                latest_manga.append(
+                popular_manga.append(
                     Manga(
                         mangaSource=SUPPORTED_SOURCES[SOURCE_NAME],
                         mangaId=manga_id,
@@ -184,7 +184,7 @@ class ManhuaPlusScraper(BaseScraper):
                 next_url = urljoin(url, next_href)
 
             return PopularMangaListResponse(
-                sourceName=SOURCE_NAME, popular_manga=latest_manga, next_url=next_url
+                sourceName=SOURCE_NAME, popular_manga=popular_manga, next_url=next_url
             )
 
     async def scrape_manga_search(self, keyword: str) -> MangaSearchResponse:
