@@ -2,7 +2,11 @@ import hashlib
 from typing import List
 
 from curl_cffi import AsyncSession
+from urllib.parse import quote, urljoin
+
 from selectolax.parser import HTMLParser
+
+from app.core.sources import SUPPORTED_SOURCES
 from .base import BaseScraper
 from app.schemas.manga_schema import (
     Manga,
@@ -20,7 +24,7 @@ DEFAULT_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36",
 }
 
-SOURCE_NAME = "manhua_plus"
+SOURCE_NAME = "manhuaplus"
 
 
 class ManhuaPlusScraper(BaseScraper):
@@ -41,6 +45,7 @@ class ManhuaPlusScraper(BaseScraper):
         return {"source": SOURCE_NAME, "message": "this is the asura scans scraper"}
 
     async def scrape_latest_manga(self, url: str) -> LatestMangaListResponse:
+
         async with self.AsyncClient as client:
             response = await client.get(url, headers=DEFAULT_HEADERS)
             response.raise_for_status()
@@ -48,6 +53,64 @@ class ManhuaPlusScraper(BaseScraper):
             tree = HTMLParser(response.text)
             latest_manga: List[Manga] = []
             next_url = None
+            seen_ids = set()
+
+            for item in tree.css("div.items div.item"):
+                link = item.css_first("figure div.image a")
+                if not link:
+                    continue
+
+                href = link.attributes.get("href")
+                if not href:
+                    continue
+
+                manga_url = urljoin(url, href.strip())
+                manga_id = manga_url.rstrip("/").split("/")[-1]
+
+                title_node = item.css_first("figcaption h3 a")
+                manga_title = (
+                    link.attributes.get("title")
+                    or (title_node.text(strip=True) if title_node else "")
+                    or ""
+                ).strip()
+
+                img = item.css_first("figure div.image img")
+                manga_cover = ""
+                if img:
+                    cover_src = (
+                        img.attributes.get("data-original")
+                        or img.attributes.get("data-src")
+                        or img.attributes.get("src")
+                        or ""
+                    )
+                    manga_cover = urljoin(url, cover_src.strip())
+
+                # skip broken or duplicate entries
+                if not manga_id or not manga_title or manga_id in seen_ids:
+                    continue
+                seen_ids.add(manga_id)
+
+                latest_manga.append(
+                    Manga(
+                        mangaSource=SUPPORTED_SOURCES[SOURCE_NAME],
+                        mangaId=manga_id,
+                        mangaTitle=manga_title,
+                        mangaUrl=manga_url,
+                        mangaCover=manga_cover,
+                    )
+                )
+
+            # next page: the <li> right after the active page in the pagination
+            next_node = tree.css_first("ul.pagination li.active + li a")
+            next_href = next_node.attributes.get("href") if next_node else None
+
+            # fallback to <link rel="next"> in the head
+            if not next_href:
+                rel_next = tree.css_first("link[rel='next']")
+                next_href = rel_next.attributes.get("href") if rel_next else None
+
+            if next_href:
+                next_url = urljoin(url, next_href)
 
             return LatestMangaListResponse(
                 source=SOURCE_NAME, latest_manga=latest_manga, next_url=next_url
