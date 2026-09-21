@@ -49,7 +49,9 @@ from app.api.v1.router import router as api_router
 app.include_router(api_router, prefix="/api/v1")
 
 
-@app.get("/")
-@limiter.limit("5/minute")
-def index(request: Request):
-    return {"message": "mangako server is working!"}
+if settings.DEV_ENVIRONMENT:
+
+    @app.get("/")
+    @limiter.limit("5/minute")
+    def index(request: Request):
+        return {"message": "mangako server is working!"}
