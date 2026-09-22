@@ -40,7 +40,7 @@ SUPPORTED_SOURCES: dict[str, Source] = {
     ),
     "manhuaplus": Source(
         sourceId="manhuaplus",
-        sourceName="ManhuaPlus",
+        sourceName="Manhua Plus",
         sourceUrl="https://manhuaplus.top/",
         sourceStatus=SourceStatus.READY_TO_USE,
     ),

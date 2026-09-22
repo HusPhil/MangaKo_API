@@ -55,5 +55,5 @@ router.include_router(
 router.include_router(
     manhuaplus_router.router,
     prefix="/manhuaplus",
-    tags=["manhuaplus"],
+    tags=["Manhua Plus"],
 )
