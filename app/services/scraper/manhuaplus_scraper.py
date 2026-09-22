@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 from io import BytesIO
+import json
 from typing import List
 
 from curl_cffi import AsyncSession
@@ -254,8 +255,7 @@ class ManhuaPlusScraper(BaseScraper):
             )
             response.raise_for_status()
 
-            # base for resolving relative chapter links (handles redirects)
-            base_url = str(response.url)
+            chapter_getter_base_url = "https://manhuaplus.top/ajax/image/list/chap/"
 
             tree = HTMLParser(response.text)
             manga_description = "No description available."
@@ -322,7 +322,9 @@ class ManhuaPlusScraper(BaseScraper):
                 if not href:
                     continue
 
-                chapter_url = urljoin(base_url, href.strip())
+                given_chapter_id = link.attributes.get("data-id")
+
+                chapter_url = urljoin(chapter_getter_base_url, given_chapter_id)
                 if chapter_url in seen_urls:
                     continue
                 seen_urls.add(chapter_url)
@@ -356,18 +358,21 @@ class ManhuaPlusScraper(BaseScraper):
                 url,
                 headers=DEFAULT_HEADERS,
             )
+
             response.raise_for_status()
+
+            data = response.json()
+            html_content = data.get("html", "")
 
             base_url = str(response.url)
 
-            tree = HTMLParser(response.text)
+            tree = HTMLParser(html_content)
             pages: list[MangaChapterPage] = []
             seen_urls = set()
-            page_entries = []  # (page_index, image_url)
+            page_entries = []
 
-            for position, node in enumerate(
-                tree.css("div.reading-detail div.page-chapter"), start=1
-            ):
+            for position, node in enumerate(tree.css("div.page-chapter"), start=1):
+
                 img = node.css_first("img")
                 if not img:
                     continue

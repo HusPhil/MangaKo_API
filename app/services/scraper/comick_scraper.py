@@ -16,7 +16,6 @@ from app.schemas.manga_schema import (
 
 from urllib.parse import quote
 
-
 IMAGE_PROXY_WORKER_URL = "https://comick-image-proxy.REDACTED.workers.dev/"
 IMAGE_METADATA_PROXY_WORKER_URL = (
     "https://mangako-image-metadata-worker.REDACTED.workers.dev/"
@@ -51,6 +50,10 @@ class ComickioScrapper(BaseScraper):
         self.AsyncClient = AsyncSession(impersonate="chrome", headers=DEFAULT_HEADERS)
 
     async def scrape(self) -> dict:
+        url = "https://comickz.co.uk/search?order_by=created_at"
+        async with self.AsyncClient as client:
+            response = await client.get(url)
+            response.raise_for_status()
 
         return {
             "res": "Comick source is working without hiccups!",
