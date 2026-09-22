@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 from io import BytesIO
 import imagesize
@@ -6,9 +7,9 @@ import imagesize
 from typing import List
 
 from curl_cffi import AsyncSession
-import httpx
 from urllib.parse import quote
 from selectolax.parser import HTMLParser
+from app.core.config import settings
 from app.core.sources import SUPPORTED_SOURCES
 from .base import BaseScraper
 from app.schemas.manga_schema import (
@@ -22,15 +23,14 @@ from app.schemas.manga_schema import (
     MangaSearchResponse,
 )
 
-DIMENSION_WORKER_URL = "https://mangabuddy-image-dimension.REDACTED.workers.dev/"
-
 DEFAULT_HEADERS = {
-    "Referer": "https://fanfox.net/",
+    "Referer": "https://weebcentral.com/",
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36",
 }
 
+IMAGE_PROXY_BASE_URL = settings.WEEB_CENTRAL_IMAGE_PROXY_WORKER_URL
+
 SOURCE_NAME = "weeb_central"
-BLURHASH_ENDPOINT = "https://REDACTED/api/blurhash"
 
 
 class WeebCentralScraper(BaseScraper):
@@ -374,8 +374,6 @@ class WeebCentralScraper(BaseScraper):
 
     async def scrape_chapter_pages(self, url: str) -> List[MangaChapterPage]:
         # 1. Transform the URL to the images endpoint
-        # input:  https://weebcentral.com/chapters/[ID]/
-        # output: https://weebcentral.com/chapters/[ID]/images?is_prev=False&current_page=1&reading_style=long_strip
         base_url = url.rstrip("/")
         images_endpoint = (
             f"{base_url}/images?is_prev=False&current_page=1&reading_style=long_strip"
@@ -390,29 +388,44 @@ class WeebCentralScraper(BaseScraper):
 
             # 3. Parse the HTML partial
             tree = HTMLParser(response.text)
-            pages: List[MangaChapterPage] = []
 
-            # 4. Iterate through all <img> tags inside the section
-            # The example HTML shows <img> tags directly under the <section>
+            # 4. Collect all valid image URLs first
+            img_urls = []
             for img in tree.css("img"):
                 img_url = img.attributes.get("src", "")
                 if not img_url or "broken_image.jpg" in img_url:
                     continue
+                img_urls.append(img_url)
 
-                # 5. Extract dimensions from attributes
-                # WeebCentral provides width and height directly in the HTML attributes
+            # 5. Fetch dimensions for all images in parallel
+            async def fetch_dimensions(img_url: str):
                 response = await client.get(
                     img_url, headers=DEFAULT_HEADERS, cookies={"isAdult": "1"}
                 )
                 response.raise_for_status()
-
                 width, height = imagesize.get(BytesIO(response.content))
+                return img_url, width, height
+
+            results = await asyncio.gather(
+                *(fetch_dimensions(img_url) for img_url in img_urls),
+                return_exceptions=True,
+            )
+
+            # 6. Build pages, skipping any that failed
+            pages: List[MangaChapterPage] = []
+            for result in results:
+                if isinstance(result, Exception):
+                    # optionally log this
+                    continue
+
+                img_url, width, height = result
+                proxied_url = f"{IMAGE_PROXY_BASE_URL}?url={quote(img_url, safe='')}"
 
                 pages.append(
                     MangaChapterPage(
                         pageId=hashlib.md5(img_url.encode()).hexdigest(),
                         pageUrl=url,  # Original chapter URL
-                        pageImageUrl=img_url,
+                        pageImageUrl=proxied_url,
                         pageWidth=width,
                         pageHeight=height,
                         pageBlurhash="",  # Blurhash usually requires processing the image itself
