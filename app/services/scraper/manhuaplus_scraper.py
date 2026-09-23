@@ -10,6 +10,7 @@ from urllib.parse import quote, urljoin
 from imagesize import imagesize
 from selectolax.parser import HTMLParser
 
+from app.core.config import settings
 from app.core.sources import SUPPORTED_SOURCES
 from .base import BaseScraper
 from app.schemas.manga_schema import (
@@ -29,6 +30,8 @@ DEFAULT_HEADERS = {
 }
 
 SOURCE_NAME = "manhuaplus"
+
+IMAGE_PROXY_BASE_URL = settings.WEEB_CENTRAL_IMAGE_PROXY_WORKER_URL
 
 
 class ManhuaPlusScraper(BaseScraper):
@@ -389,6 +392,7 @@ class ManhuaPlusScraper(BaseScraper):
                 seen_urls.add(image_src)
 
                 image_url = urljoin(base_url, image_src)
+
                 page_index = img.attributes.get("data-index") or str(position)
                 page_entries.append((page_index, image_url))
 
@@ -414,11 +418,12 @@ class ManhuaPlusScraper(BaseScraper):
             )
 
             for (page_index, image_url), (width, height) in zip(page_entries, sizes):
+                proxied_url = f"{IMAGE_PROXY_BASE_URL}?url={quote(image_url, safe='')}"
                 pages.append(
                     MangaChapterPage(
                         pageId=hashlib.md5(image_url.encode()).hexdigest(),
                         pageUrl=f"{base_url}#page_{page_index}",
-                        pageImageUrl=image_url,
+                        pageImageUrl=proxied_url,
                         pageWidth=width,
                         pageHeight=height,
                         pageBlurhash="",
