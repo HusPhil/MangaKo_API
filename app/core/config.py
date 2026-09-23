@@ -12,6 +12,10 @@ class Settings(BaseSettings):
         "WEEB_CENTRAL_IMAGE_PROXY_WORKER_URL", ""
     )
 
+    MANHUAPLUS_IMAGE_PROXY_WORKER_URL: str = os.getenv(
+        "MANHUAPLUS_IMAGE_PROXY_WORKER_URL", ""
+    )
+
     class Config:
         extra = "allow"
         env_file = ".env"  # Load environment variables
