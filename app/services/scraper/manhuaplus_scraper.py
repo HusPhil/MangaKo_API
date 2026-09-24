@@ -33,6 +33,8 @@ SOURCE_NAME = "manhuaplus"
 
 IMAGE_PROXY_BASE_URL = settings.WEEB_CENTRAL_IMAGE_PROXY_WORKER_URL
 
+MAX_PROBE_BYTES = 512 * 1024
+
 
 class ManhuaPlusScraper(BaseScraper):
     def __init__(self):
@@ -418,7 +420,7 @@ class ManhuaPlusScraper(BaseScraper):
                         if width > 0 and height > 0:
                             return width, height
 
-                        if len(buffer) > MAX_:
+                        if len(buffer) > MAX_PROBE_BYTES:
                             break
                 return 0, 0
 
