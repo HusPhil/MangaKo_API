@@ -357,25 +357,19 @@ class ManhuaPlusScraper(BaseScraper):
 
     async def scrape_chapter_pages(self, url: str) -> list[MangaChapterPage]:
         async with self.AsyncClient as client:
-            response = await client.get(
-                url,
-                headers=DEFAULT_HEADERS,
-            )
-
+            response = await client.get(url, headers=DEFAULT_HEADERS)
             response.raise_for_status()
 
             data = response.json()
             html_content = data.get("html", "")
-
             base_url = str(response.url)
 
             tree = HTMLParser(html_content)
             pages: list[MangaChapterPage] = []
-            seen_urls = set()
-            page_entries = []
+            seen_urls: set[str] = set()
+            page_entries: list[tuple[str, str]] = []
 
             for position, node in enumerate(tree.css("div.page-chapter"), start=1):
-
                 img = node.css_first("img")
                 if not img:
                     continue
@@ -392,26 +386,57 @@ class ManhuaPlusScraper(BaseScraper):
                 seen_urls.add(image_src)
 
                 image_url = urljoin(base_url, image_src)
-
                 page_index = img.attributes.get("data-index") or str(position)
                 page_entries.append((page_index, image_url))
 
-            semaphore = asyncio.Semaphore(5)  # max 5 downloads at once
+            image_headers = {
+                **DEFAULT_HEADERS,
+                "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+                "Referer": base_url,
+            }
+            range_headers = {**image_headers, "Range": "bytes=0-65535"}
+
+            async def probe(image_url: str, headers: dict) -> tuple[int, int]:
+                """Stream the image and stop as soon as dimensions can be read."""
+                async with client.stream("GET", image_url, headers=headers) as r:
+                    r.raise_for_status()
+
+                    if hasattr(r, "aiter_content"):
+                        chunks = r.aiter_content()
+                    else:
+                        chunks = r.aiter_bytes(chunk_size=8192)
+
+                    buffer = bytearray()
+                    async for chunk in chunks:
+                        buffer.extend(chunk)
+
+                        try:
+                            width, height = imagesize.get(BytesIO(bytes(buffer)))
+                        except Exception:
+                            width, height = -1, -1
+
+                        if width > 0 and height > 0:
+                            return width, height
+
+                        if len(buffer) > MAX_:
+                            break
+                return 0, 0
 
             async def get_image_size(image_url: str) -> tuple[int, int]:
-                async with semaphore:
+
+                for headers in (range_headers, image_headers):
                     try:
-                        img_response = await client.get(
-                            image_url, headers=DEFAULT_HEADERS
+                        width, height = await probe(image_url, headers)
+                        if width > 0 and height > 0:
+                            return width, height
+                    except Exception as e:
+                        print(
+                            "Size probe failed for %s (range=%s): %r",
+                            image_url,
+                            "Range" in headers,
+                            e,
                         )
-                        img_response.raise_for_status()
-                        width, height = imagesize.get(BytesIO(img_response.content))
-                        # imagesize returns (-1, -1) when it can't read the format
-                        if width < 0 or height < 0:
-                            return 0, 0
-                        return width, height
-                    except Exception:
-                        return 0, 0
+                return 0, 0
 
             sizes = await asyncio.gather(
                 *(get_image_size(image_url) for _, image_url in page_entries)
